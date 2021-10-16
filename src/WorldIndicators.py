@@ -7,9 +7,9 @@
 
 from pprint import pprint
 import wbgapi as wb
+import pandas as pd
 from pymongo import MongoClient
 from pymongo import UpdateOne
-
 
 MONGODB_HOST = 'localhost'
 MONGODB_PORT = 27017
@@ -20,7 +20,6 @@ def find_country_name(code):
     economy = list(wb.economy.list(code))
     if len(economy) == 0:
         raise ValueError(f"Invalid country code {code}.")
-
     return economy[0]['value']
 
 
@@ -52,32 +51,70 @@ class WorldIndicators:
         """ Function gets data from local database.
         :return: list of countries with country codes and names
         """
-        return list()
+        cursor = self.db.countries.find({})
+        out = []
+        for doc in cursor:
+            out.append((doc['_id'], doc['name']))
+        return out
 
     def years(self):
         """ Function gets data from local database.
         :return: list of years with data
         """
-        return list()
+
+        # TODO Think of a more sensible implementation
+        cursor = self.db.countries.find({})
+        years = []
+        for doc in cursor:
+            for _, val in doc['indicators'].items():
+                for key in val.keys():
+                    if key not in years:
+                        years.append(key)
+        return years
 
     def indicators(self):
         """ Function gets data from local database.
         Indicator is of form (id, desc, db, home) possibly with url explanation.
         :return: list of indicators
         """
-        return list()
+        cursor = self.db.indicators.find({})
+        out = []
+        for doc in cursor:
+            out.append((doc['_id'], doc['desc'], doc['db'], doc['url']))
+        return out
 
-    def data(self, countries, indicators, years):
+    def data(self, countries, indicators, year):
         """ Function gets data from local database.
         :param countries: list of country codes
         :type countries: list
         :param indicators: list of indicator codes
         :type indicators: list
         :param year: year for data
-        :type year: int
+        :type year: list or int
         :return: list of indicators
         """
-        return list()
+
+        cols = indicators
+        if type(year) is list and len(year) > 1:
+            cols = []
+            for y in year:
+                for i in indicators:
+                    cols.append(f"{y}-{i}")
+
+        # Create appropriate pandas Dataframe
+        df = pd.DataFrame(data=None, index=countries, columns=cols)
+
+        # Fill Dataframe from local database
+        collection = self.db.countries
+        for doc in collection.find({"_id": {"$in": countries}}):
+            for i in indicators:
+                values = doc['_id']['indicators'][i]
+                if type(year) is list and len(year) > 1:
+                    for y in year:
+                        df.at[doc['_id']][f"{y}-{i}"] = values[str(y)]
+                else:
+                    df.at[doc['_id']][i] = values[str(year)]
+        return df
 
     def update(self, countries, indicators, years, db):
         """ Refreshes the local database from a given db database.
@@ -138,7 +175,6 @@ class WorldIndicators:
                 else:
                     doc['indicators'][row['series']] = {}
                     indicator = doc['indicators'][row['series']]
-
 
                 for key, val in row.items():
                     if 'YR' in key:

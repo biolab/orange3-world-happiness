@@ -4,12 +4,13 @@
 #
 # Author: Nejc Hirci
 # -----------------------------------------------------------
-
+import os.path
 from pprint import pprint
 import wbgapi as wb
 import pandas as pd
 from pymongo import MongoClient
 from pymongo import UpdateOne
+import csv
 
 MONGODB_HOST = 'localhost'
 MONGODB_PORT = 27017
@@ -23,12 +24,36 @@ def find_country_name(code):
     return economy[0]['value']
 
 
-def find_indicator_desc(code):
-    indicator = list(wb.series.list(code))
-    if len(indicator) == 0:
-        raise ValueError(f"Invalid indicator code {code}.")
+def find_indicator_desc(code,db):
+    if db == 'WDI' or db == 'WDB':
+        indicator = list(wb.series.list(code))
+        if len(indicator) == 0:
+            raise ValueError(f"Invalid indicator code {code}.")
 
-    return indicator[0]['value']
+        return indicator[0]['value']
+    elif db == 'WHR':
+        for item in whr_indicators:
+            if item[0] == code:
+                return item[1]
+
+
+whr_indicators = [('HAP.SCORE', 'Ladder score'),
+                  ('HAP.SCORE.STD.ERR', 'Standard error of ladder score'),
+                  ('LOG.GDP.PER.CAP', 'Logged GDP per capita'),
+                  ('SOC.SUP', 'Social support'),
+                  ('HEA.LIF.EXP', 'Healthy life expectancy'),
+                  ('FRE.LIF.CHO', 'Freedom to make life choices'),
+                  ('GEN.SCORE', 'Generosity'),
+                  ('PER.OF.COR', 'Perceptions of corruption'),
+                  ('HAP.SCORE.DYST', 'Ladder score in Dystopia'),
+                  ('EXP.BY.GDP', 'Explained by: Log GDP per capita'),
+                  ('EXP.BY.SOC.SUP', 'Explained by: Social support'),
+                  ('EXP.BY.HEA.LIF.EXP', 'Explained by: Healthy life expectancy'),
+                  ('EXP.BY.FRE.LIF.CHO', 'Explained by: Freedom to make life choices'),
+                  ('EXP.BY.GEN', 'Explained by: Generosity'),
+                  ('EXP.BY.PER.OF.COR', 'Explained by: Perceptions fo corruption'),
+                  ('DYST.AND.RES', 'Dystopia with residual')
+                  ]
 
 
 class WorldIndicators:
@@ -97,8 +122,8 @@ class WorldIndicators:
         cols = indicators
         if type(year) is list and len(year) > 1:
             cols = []
-            for y in year:
-                for i in indicators:
+            for i in indicators:
+                for y in year:
                     cols.append(f"{y}-{i}")
 
         # Create appropriate pandas Dataframe
@@ -108,12 +133,15 @@ class WorldIndicators:
         collection = self.db.countries
         for doc in collection.find({"_id": {"$in": countries}}):
             for i in indicators:
-                values = doc['_id']['indicators'][i]
+                values = doc['indicators'][i]
                 if type(year) is list and len(year) > 1:
                     for y in year:
-                        df.at[doc['_id']][f"{y}-{i}"] = values[str(y)]
+                        if str(y) in values:
+                            df.at[doc['_id'], f"{y}-{i}"] = values[str(y)]
                 else:
-                    df.at[doc['_id']][i] = values[str(year)]
+                    if str(year) in values:
+                        df.at[doc['_id'], i] = values[str(year)]
+        print(df)
         return df
 
     def update(self, countries, indicators, years, db):
@@ -123,11 +151,14 @@ class WorldIndicators:
         :param indicators: list of indicator codes
         :type indicators: list
         :param years: list of years
-        :type years: list
+        :type years: list or int
         :param db: database
         :type db: str
         :return: list of indicators
         """
+
+        if type(years) is int:
+            years = [years]
 
         # First get country documents if they don't exist create them
         documents = {}
@@ -149,7 +180,7 @@ class WorldIndicators:
             if len(list(self.db.indicators.find({"_id": code}).limit(1))) == 0:
                 doc = {
                     "_id": code,
-                    "desc": find_indicator_desc(code),
+                    "desc": find_indicator_desc(code, db),
                     "db": db,
                     "url": None
                 }
@@ -180,21 +211,49 @@ class WorldIndicators:
                     if 'YR' in key:
                         indicator.update({key[2:]: val})
 
-            # Update documents in local mongo database
-            operations = []
-            for _, doc in documents.items():
-                operations.append(UpdateOne({"_id": doc['_id']}, {"$set": doc}, upsert=True))
-
-            result = collection.bulk_write(operations)
-            pprint(result.bulk_api_result)
-
         elif db == 'WHR':
-            # TODO Implement WHR update function
-            pass
+            df = pd.read_csv(f'../WHR2021_data_panel.csv')
+            df = df.set_index('Country name')
 
+            for country_code in countries:
+                doc = documents[country_code]
+                country_key = find_country_name(country_code)
+                country_df = df[df.index == country_key]
+                country_df = country_df.set_index('year')
+
+                for indicator_code in indicators:
+                    indic_key = find_indicator_desc(indicator_code, db)
+
+                    if indic_key in df.columns:
+                        if hasattr(doc['indicators'], indicator_code):
+                            indicator = doc['indicators'][indicator_code]
+                        else:
+                            doc['indicators'][indicator_code] = {}
+                            indicator = doc['indicators'][indicator_code]
+
+                        for year in years:
+                            if year not in country_df.index:
+                                print(f'Year {year} for {country_key} of {indic_key} is missing.')
+                            else:
+                                print(country_df.index)
+                                val = country_df.at[year, indic_key]
+                                indicator.update({str(year): val})
+                    else:
+                        print(f"Skipping {indic_key} because missing in file.")
+
+        # Update documents in local mongo database
+        operations = []
+        for _, doc in documents.items():
+            operations.append(UpdateOne({"_id": doc['_id']}, {"$set": doc}, upsert=True))
+
+        result = collection.bulk_write(operations)
+        pprint(result.bulk_api_result)
 
 if __name__ == "__main__":
     data = WorldIndicators("main", "biolab")
 
-    # Test querry
-    data.update(['USA', 'CAN'], ['NY.GDP.PCAP.CD', 'SP.POP.TOTL'], list(range(1920, 2020)), 'WDI')
+    # Test querry for WDB
+    # data.update(['USA', 'CAN'], ['NY.GDP.PCAP.CD', 'SP.POP.TOTL'], list(range(1920, 2020)), 'WDI')
+    # data.data(['USA', 'CAN'], ['NY.GDP.PCAP.CD', 'SP.POP.TOTL'], list(range(1920, 2020)))
+
+    data.update(['USA'], ['HAP.SCORE'], 2013, 'WHR')

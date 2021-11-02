@@ -10,11 +10,12 @@ import wbgapi as wb
 import pandas as pd
 from pymongo import MongoClient
 from pymongo import UpdateOne
+import datetime
 import csv
 
-MONGODB_HOST = 'localhost'
+MONGODB_HOST = 'cluster0.vxftj.mongodb.net'
 MONGODB_PORT = 27017
-DB_NAME = 'world-indicators'
+DB_NAME = 'world-database'
 
 
 def find_country_name(code):
@@ -24,7 +25,7 @@ def find_country_name(code):
     return economy[0]['value']
 
 
-def find_indicator_desc(code,db):
+def find_indicator_desc(code, db):
     if db == 'WDI' or db == 'WDB':
         indicator = list(wb.series.list(code))
         if len(indicator) == 0:
@@ -38,21 +39,12 @@ def find_indicator_desc(code,db):
 
 
 whr_indicators = [('HAP.SCORE', 'Ladder score'),
-                  ('HAP.SCORE.STD.ERR', 'Standard error of ladder score'),
                   ('LOG.GDP.PER.CAP', 'Logged GDP per capita'),
                   ('SOC.SUP', 'Social support'),
                   ('HEA.LIF.EXP', 'Healthy life expectancy'),
                   ('FRE.LIF.CHO', 'Freedom to make life choices'),
                   ('GEN.SCORE', 'Generosity'),
-                  ('PER.OF.COR', 'Perceptions of corruption'),
-                  ('HAP.SCORE.DYST', 'Ladder score in Dystopia'),
-                  ('EXP.BY.GDP', 'Explained by: Log GDP per capita'),
-                  ('EXP.BY.SOC.SUP', 'Explained by: Social support'),
-                  ('EXP.BY.HEA.LIF.EXP', 'Explained by: Healthy life expectancy'),
-                  ('EXP.BY.FRE.LIF.CHO', 'Explained by: Freedom to make life choices'),
-                  ('EXP.BY.GEN', 'Explained by: Generosity'),
-                  ('EXP.BY.PER.OF.COR', 'Explained by: Perceptions fo corruption'),
-                  ('DYST.AND.RES', 'Dystopia with residual')
+                  ('PER.OF.COR', 'Perceptions of corruption')
                   ]
 
 
@@ -67,8 +59,7 @@ class WorldIndicators:
         """ Set up connection to local mongoDB database
         :return: database object
         """
-        uri = f"mongodb://{self.user}:{self.pwd}@{MONGODB_HOST}:{MONGODB_PORT}/?authSource={DB_NAME}&authMechanism" \
-              f"=SCRAM-SHA-256"
+        uri = f"mongodb+srv://{self.user}:{self.pwd}@{MONGODB_HOST}/{DB_NAME}?retryWrites=true&w=majority"
         client = MongoClient(uri)
         return client[DB_NAME]
 
@@ -141,7 +132,6 @@ class WorldIndicators:
                 else:
                     if str(year) in values:
                         df.at[doc['_id'], i] = values[str(year)]
-        print(df)
         return df
 
     def update(self, countries, indicators, years, db):
@@ -164,11 +154,10 @@ class WorldIndicators:
         documents = {}
         collection = self.db.countries
         for code in countries:
-            name = find_country_name(code)
             if len(list(collection.find({"_id": code}).limit(1))) == 0:
                 doc = {
                     "_id": code,
-                    "name": name,
+                    "name": find_country_name(code),
                     "indicators": {}
                 }
             else:
@@ -186,33 +175,43 @@ class WorldIndicators:
                 }
                 self.db.indicators.insert_one(doc)
 
-        if db == 'WDI' or db == 'WBD':
-            # Fetch data from WBD
-            wb.db = 2
-            data = wb.data.DataFrame(indicators, economy=countries, time=years)
-            data.reset_index(inplace=True)
-            data_dict = data.to_dict("records")
+        if db == 'WDI':
+            wb.db = 2  # Set to WBD/WDI
+            collection = self.db.countries  # Select mongo collection of countries
 
-            # Select mongo collection of countries
-            collection = self.db.countries
+            # For performance reasons split queries on countries and limit to 200 indicators per query
 
-            # Get data and update local python object
-            for row in data_dict:
-                doc = documents[row['economy']]
-                print(f"Update document for country {row['economy']} for {row['series']}")
+            for country_code in countries:
+                doc = documents[country_code]
 
-                if hasattr(doc['indicators'], row['series']):
-                    indicator = doc['indicators'][row['series']]
-                else:
-                    doc['indicators'][row['series']] = {}
-                    indicator = doc['indicators'][row['series']]
+                for i in range(0, len(indicators), 200):
+                    print(f"[{datetime.datetime.now()}] Updating indicators {i}:{i+200} for " +
+                          f"{doc['name']}")
+                    wb_data = wb.data.DataFrame(indicators[i:i+200], economy=country_code, time=years)
+                    wb_data.reset_index(inplace=True)
+                    data_dict = wb_data.to_dict("records")
 
-                for key, val in row.items():
-                    if 'YR' in key:
-                        indicator.update({key[2:]: val})
+                    # Get data and update local python object
+                    for row in data_dict:
+                        indic_code = indicators[i]
+                        if len(indicators) > 1:
+                            indic_code = row['series']
+
+                        if hasattr(doc['indicators'], indic_code):
+                            indic = doc['indicators'][indic_code]
+                        else:
+                            doc['indicators'][indic_code] = {}
+                            indic = doc['indicators'][indic_code]
+
+                        for key, val in row.items():
+                            if 'YR' in key and not pd.isna(val):
+                                indic.update({key[2:]: val})
+
+                    # Perform mongo database update
+                    collection.update_one({"_id": doc['_id']}, {"$set": doc}, upsert=True)
 
         elif db == 'WHR':
-            df = pd.read_csv(f'../WHR2021_data_panel.csv')
+            df = pd.read_csv(f'./WHR2021_data_panel.csv')
             df = df.set_index('Country name')
 
             for country_code in countries:
@@ -226,34 +225,49 @@ class WorldIndicators:
 
                     if indic_key in df.columns:
                         if hasattr(doc['indicators'], indicator_code):
-                            indicator = doc['indicators'][indicator_code]
+                            indic = doc['indicators'][indicator_code]
                         else:
                             doc['indicators'][indicator_code] = {}
-                            indicator = doc['indicators'][indicator_code]
+                            indic = doc['indicators'][indicator_code]
 
-                        for year in years:
-                            if year not in country_df.index:
-                                print(f'Year {year} for {country_key} of {indic_key} is missing.')
+                        for y in years:
+                            if y not in country_df.index:
+                                print(f'Year {y} for {country_key} of {indic_key} is missing.')
                             else:
-                                print(country_df.index)
-                                val = country_df.at[year, indic_key]
-                                indicator.update({str(year): val})
+                                val = country_df.at[y, indic_key]
+                                indic.update({str(y): val})
                     else:
                         print(f"Skipping {indic_key} because missing in file.")
 
-        # Update documents in local mongo database
-        operations = []
-        for _, doc in documents.items():
-            operations.append(UpdateOne({"_id": doc['_id']}, {"$set": doc}, upsert=True))
+                # Perform mongo database update
+                collection.update_one({"_id": doc['_id']}, {"$set": doc}, upsert=True)
 
-        result = collection.bulk_write(operations)
-        pprint(result.bulk_api_result)
+
+# TODO: Hierarhija za lažje iskanje indikatorjev z metadato
+
 
 if __name__ == "__main__":
     data = WorldIndicators("main", "biolab")
 
-    # Test querry for WDB
-    # data.update(['USA', 'CAN'], ['NY.GDP.PCAP.CD', 'SP.POP.TOTL'], list(range(1920, 2020)), 'WDI')
-    # data.data(['USA', 'CAN'], ['NY.GDP.PCAP.CD', 'SP.POP.TOTL'], list(range(1920, 2020)))
+    '''
+    # To update all data from WDI in remote database
+    country_codes = [c for c, _ in data.countries()]
+    whi_indicators = [i for i, _, db, _ in data.indicators() if db == 'WDI']
+    
+    data.update(country_codes, whi_indicators, list(range(1960, 2020)), 'WDI'
+    '''
 
-    data.update(['USA'], ['HAP.SCORE'], 2013, 'WHR')
+    '''
+    # To update data from WHR 2021 in remote database
+    country_codes = [c for c, _ in data.countries()]
+    
+    data.update(country_codes, whr_indicators, list(range(1960, 2020)), 'WHR')
+    
+    '''
+
+    country_codes = [c for c, _ in data.countries()]
+    whi_indicators = [i for i, _, db, _ in data.indicators() if db == 'WDI']
+
+    # To update all data from WDI
+    # data.upda
+    data.update(country_codes, whi_indicators, list(range(1980, 2000)), 'WDI')

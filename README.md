@@ -29,8 +29,9 @@ code_countries = [code for code, fullname in db.countries()]
 # country codes and columns consist of `YYYY-indicator_code` if more then one year is 
 # requested otherwise indicator_code.
     
-# To get wdb_indicators
-dataframe = db.data(code_countries, wdb_indicators, list(range(2000,2020)))
+# To get wdb_indicators (some examples)
+df = db.data(code_countries, whr_indicators, 2019)
+df = db.data(code_countries, wdb_indicators, list(range(2000,2020)))
 
 # To update data in the remote database you can use.
 

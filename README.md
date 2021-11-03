@@ -21,9 +21,9 @@ db = WorldIndicators('main', 'biolab')
   
 # To create a list of indicators and list of countries for further queries.
 
-wdb_indicators = [code for code, desc, db, url in data.indicators() if db == 'WDB']
-whr_indicators = [code for code, desc, db, url in data.indicators() if db == 'WHR']
-code_countries = [code for code, fullname in data.countries()]
+wdb_indicators = [code for code, desc, db, url in db.indicators() if db == 'WDB']
+whr_indicators = [code for code, desc, db, url in db.indicators() if db == 'WHR']
+code_countries = [code for code, fullname in db.countries()]
 
 # To get data from remote database in a Pandas dataframe format, where rows consist of 
 # country codes and columns consist of `YYYY-indicator_code` if more then one year is 

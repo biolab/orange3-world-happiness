@@ -208,7 +208,7 @@ class WorldIndicators:
                     collection.update_one({"_id": doc['_id']}, {"$set": doc}, upsert=True)
 
         elif db == 'WHR':
-            df = pd.read_csv(f'./WHR2021_data_panel.csv')
+            df = pd.read_csv(f'../data/WHR2021_data_panel.csv')
             df = df.set_index('Country name')
 
             for country_code in countries:
@@ -238,31 +238,3 @@ class WorldIndicators:
 
                 # Perform mongo database update
                 collection.update_one({"_id": doc['_id']}, {"$set": doc}, upsert=True)
-
-
-# TODO: Hierarhija za lažje iskanje indikatorjev z metadato
-
-
-if __name__ == "__main__":
-    data = WorldIndicators("main", "biolab")
-
-    '''
-    # To update all data from WDI in remote database
-    country_codes = [c for c, _ in data.countries()]
-    whi_indicators = [i for i, _, db, _ in data.indicators() if db == 'WDI']
-    
-    data.update(country_codes, whi_indicators, list(range(1960, 2020)), 'WDI'
-    '''
-
-    '''
-    # To update data from WHR 2021 in remote database
-    country_codes = [c for c, _ in data.countries()]
-    
-    data.update(country_codes, whr_indicators, list(range(1960, 2020)), 'WHR')
-    
-    '''
-
-    country_codes = [c for c, _ in data.countries()]
-    whi_indicators = [i for i, _, db, _ in data.indicators() if db == 'WDI']
-
-    data.update(country_codes, whi_indicators, list(range(1960, 1980)), 'WDI')

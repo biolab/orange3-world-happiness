@@ -16,7 +16,8 @@ python -m pip install .
 # First import script and create class object.
 from whstudy import WorldIndicators
 
-db = WorldIndicators(main, biolab)
+# To use already prepared mongo database
+db = WorldIndicators('main', 'biolab')
   
 # To create a list of indicators and list of countries for further queries.
 

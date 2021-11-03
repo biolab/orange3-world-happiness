@@ -4,14 +4,11 @@
 #
 # Author: Nejc Hirci
 # -----------------------------------------------------------
-import os.path
-from pprint import pprint
+
 import wbgapi as wb
 import pandas as pd
 from pymongo import MongoClient
-from pymongo import UpdateOne
 import datetime
-import csv
 
 MONGODB_HOST = 'cluster0.vxftj.mongodb.net'
 MONGODB_PORT = 27017
@@ -268,6 +265,4 @@ if __name__ == "__main__":
     country_codes = [c for c, _ in data.countries()]
     whi_indicators = [i for i, _, db, _ in data.indicators() if db == 'WDI']
 
-    # To update all data from WDI
-    # data.upda
-    data.update(country_codes, whi_indicators, list(range(1980, 2000)), 'WDI')
+    data.update(country_codes, whi_indicators, list(range(1960, 1980)), 'WDI')

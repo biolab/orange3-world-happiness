@@ -115,7 +115,7 @@ class WorldIndicators:
                     cols.append(f"{y}-{i}")
 
         # Create appropriate pandas Dataframe
-        df = pd.DataFrame(data=None, index=countries, columns=cols)
+        df = pd.DataFrame(data=None, index=countries, columns=cols, dtype=float)
 
         # Fill Dataframe from local database
         collection = self.db.countries

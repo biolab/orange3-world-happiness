@@ -126,6 +126,11 @@ class WorldIndicators:
         # Create appropriate pandas Dataframe
         df = pd.DataFrame(data=None, index=countries, columns=cols, dtype=float)
 
+        # Convert country row to string
+        if include_country_names:
+            df = df.astype({"Country name": str})
+
+
         # Fill Dataframe from local database
         collection = self.db.countries
         for doc in collection.find({"_id": {"$in": countries}}):

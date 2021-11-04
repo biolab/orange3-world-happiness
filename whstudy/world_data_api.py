@@ -5,9 +5,10 @@
 # Author: Nejc Hirci
 # -----------------------------------------------------------
 
+from pprint import pprint
 import wbgapi as wb
 import pandas as pd
-from pymongo import MongoClient
+from pymongo import MongoClient, ReplaceOne
 import datetime
 
 MONGODB_HOST = 'cluster0.vxftj.mongodb.net'
@@ -96,23 +97,31 @@ class WorldIndicators:
             out.append((doc['_id'], doc['desc'], doc['db'], doc['url']))
         return out
 
-    def data(self, countries, indicators, year):
+    def data(self, countries, indicators, year, skip_empty_columns=True, skip_empty_rows=True, include_country_names=False):
         """ Function gets data from local database.
+        :param include_country_names: add collumn with country names
+        :param skip_empty_rows: skip all NaN columns
+        :param skip_empty_columns: skip all NaN rows
         :param countries: list of country codes
         :type countries: list
         :param indicators: list of indicator codes
         :type indicators: list
         :param year: year for data
-        :type year: list or int
-        :return: list of indicators
+        :type year: list(int) or int
+        :return: Pandas dataframe
         """
 
-        cols = indicators
-        if type(year) is list and len(year) > 1:
-            cols = []
+        if type(year) is int:
+            year = [year]
+
+        cols = ["Country name"] if include_country_names else []
+
+        if len(year) > 1:
             for i in indicators:
                 for y in year:
                     cols.append(f"{y}-{i}")
+        else:
+            cols.extend(indicators)
 
         # Create appropriate pandas Dataframe
         df = pd.DataFrame(data=None, index=countries, columns=cols, dtype=float)
@@ -120,15 +129,24 @@ class WorldIndicators:
         # Fill Dataframe from local database
         collection = self.db.countries
         for doc in collection.find({"_id": {"$in": countries}}):
+            if include_country_names:
+                df.at[doc['_id'], "Country name"] = doc['name']
             for i in indicators:
                 values = doc['indicators'][i]
-                if type(year) is list and len(year) > 1:
+                if len(year) > 1:
                     for y in year:
                         if str(y) in values:
                             df.at[doc['_id'], f"{y}-{i}"] = values[str(y)]
                 else:
                     if str(year) in values:
                         df.at[doc['_id'], i] = values[str(year)]
+
+        if skip_empty_rows:
+            df = df.dropna(axis=0, how='all')
+
+        if skip_empty_columns:
+            df = df.dropna(axis=1, how='all')
+
         return df
 
     def update(self, countries, indicators, years, db):
@@ -147,21 +165,7 @@ class WorldIndicators:
         if type(years) is int:
             years = [years]
 
-        # First get country documents if they don't exist create them
-        documents = {}
-        collection = self.db.countries
-        for code in countries:
-            if len(list(collection.find({"_id": code}).limit(1))) == 0:
-                doc = {
-                    "_id": code,
-                    "name": find_country_name(code),
-                    "indicators": {}
-                }
-            else:
-                doc = collection.find_one({"_id": code})
-            documents.update({code: doc})
-
-        # Second create indicator documents if they don't exist
+        # Create indicator documents if they don't exist
         for code in indicators:
             if len(list(self.db.indicators.find({"_id": code}).limit(1))) == 0:
                 doc = {
@@ -174,12 +178,17 @@ class WorldIndicators:
 
         if db == 'WDI':
             wb.db = 2  # Set to WBD/WDI
-            collection = self.db.countries  # Select mongo collection of countries
 
             # For performance reasons split queries on countries and limit to 200 indicators per query
-
             for country_code in countries:
-                doc = documents[country_code]
+                doc = self.db.countries.find_one({"_id": country_code})
+
+                if doc is None:
+                    doc = {
+                        "_id": country_code,
+                        "name": find_country_name(country_code),
+                        "indicators": {}
+                    }
 
                 for i in range(0, len(indicators), 200):
                     print(f"[{datetime.datetime.now()}] Updating indicators {i}:{i+200} for " +
@@ -204,15 +213,24 @@ class WorldIndicators:
                             if 'YR' in key and not pd.isna(val):
                                 indic.update({key[2:]: val})
 
-                    # Perform mongo database update
-                    collection.update_one({"_id": doc['_id']}, {"$set": doc}, upsert=True)
+                # Update document in remote mongo database
+                result = self.db.countries.replace_one({"_id": country_code}, doc)
+                print("Data replaced with id", result)
 
         elif db == 'WHR':
             df = pd.read_csv(f'../data/WHR2021_data_panel.csv')
             df = df.set_index('Country name')
 
             for country_code in countries:
-                doc = documents[country_code]
+                doc = self.db.countries.find_one({"_id": country_code})
+
+                if doc is None:
+                    doc = {
+                        "_id": country_code,
+                        "name": find_country_name(country_code),
+                        "indicators": {}
+                    }
+
                 country_key = find_country_name(country_code)
                 country_df = df[df.index == country_key]
                 country_df = country_df.set_index('year')
@@ -236,5 +254,8 @@ class WorldIndicators:
                     else:
                         print(f"Skipping {indic_key} because missing in file.")
 
-                # Perform mongo database update
-                collection.update_one({"_id": doc['_id']}, {"$set": doc}, upsert=True)
+                # Update document in remote mongo database
+                result = self.db.countries.replace_one({"_id": country_code}, doc)
+                print("Data replaced with id", result)
+
+

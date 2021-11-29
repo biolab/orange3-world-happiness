@@ -65,7 +65,7 @@ class WorldIndicators:
         """ Function gets data from local database.
         :return: list of countries with country codes and names
         """
-        cursor = self.db.countries.find({})
+        cursor = self.db.countries.find({}, {'_id': 1, 'name': 1})
         out = []
         for doc in cursor:
             out.append((doc['_id'], doc['name']))
@@ -77,7 +77,7 @@ class WorldIndicators:
         """
 
         # TODO Think of a more sensible implementation
-        cursor = self.db.countries.find({})
+        cursor = self.db.countries.find({}, {"indicators": 1})
         years = []
         for doc in cursor:
             for _, val in doc['indicators'].items():
@@ -143,8 +143,8 @@ class WorldIndicators:
                         if str(y) in values:
                             df.at[doc['_id'], f"{y}-{i}"] = values[str(y)]
                 else:
-                    if str(year) in values:
-                        df.at[doc['_id'], i] = values[str(year)]
+                    if str(year[0]) in values:
+                        df.at[doc['_id'], i] = values[str(year[0])]
 
         if skip_empty_rows:
             df = df.dropna(axis=0, how='all')

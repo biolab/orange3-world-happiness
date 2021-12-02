@@ -137,15 +137,15 @@ class WorldIndicators:
             if include_country_names:
                 df.at[doc['_id'], "Country name"] = doc['name']
             for i in indicators:
-                values = doc['indicators'][i]
-                if len(year) > 1:
-                    for y in year:
-                        if str(y) in values:
-                            df.at[doc['_id'], f"{y}-{i}"] = values[str(y)]
-                else:
-                    if str(year[0]) in values:
-                        df.at[doc['_id'], i] = values[str(year[0])]
-
+                if i in doc['indicators']:
+                    values = doc['indicators'][i]
+                    if len(year) > 1:
+                        for y in year:
+                            if str(y) in values:
+                                df.at[doc['_id'], f"{y}-{i}"] = values[str(y)]
+                    else:
+                        if str(year[0]) in values:
+                            df.at[doc['_id'], i] = values[str(year[0])]
         if skip_empty_rows:
             df = df.dropna(axis=0, how='all')
 

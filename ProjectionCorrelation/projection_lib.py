@@ -5,7 +5,7 @@ import numpy as np
 import random
 from math import sqrt
 
-from sklearn.preprocessing import normalize, PowerTransformer
+from sklearn.preprocessing import normalize, QuantileTransformer
 from sklearn.manifold import TSNE
 from sklearn.neighbors import NearestNeighbors
 from sklearn.metrics.pairwise import euclidean_distances
@@ -16,6 +16,15 @@ from Orange.preprocess import Normalize
 from whstudy import WorldIndicators
 
 T = 1000
+
+def gaussian_transform(x):
+    std = np.std(x)
+    x = x / std
+    values = np.zeros(x.shape)
+    for i in range(x.shape[0]):
+        num = (-(x[i])**2) / 2
+        values[i] = math.exp(num)
+    return values
 
 
 def score_projections(reference, x, y, overlay):
@@ -32,7 +41,7 @@ def score_projections(reference, x, y, overlay):
     """
 
     # 1. Normalize overlay data
-    normalizer = Normalize()
+    normalizer = Normalize(norm_type=Normalize.NormalizeBySpan, zero_based=True)
     overlay = normalizer(overlay)
     n_rows = reference.X.shape[0]
 
@@ -47,13 +56,10 @@ def score_projections(reference, x, y, overlay):
     k = round(sqrt(n_rows))
     nbrs = NearestNeighbors(n_neighbors=k).fit(ref_list.X_df)
 
-    distances, indices = nbrs.kneighbors(ref_list.X_df)
-
-    # Transformer for Gaussian
-    pt = PowerTransformer(method="yeo-johnson")
+    _, indices = nbrs.kneighbors(ref_list.X_df)
 
     # 2D table for scores of features in overlay
-    score = np.zeros([n_rows, overlay.X.shape[1]])
+    score = np.zeros([overlay.X.shape[1], n_rows])
 
     ind = 0
     for r in ref_list:
@@ -61,53 +67,25 @@ def score_projections(reference, x, y, overlay):
         r_nbrs = ref_list[nbr_ind]
         numpy_nbrs = r_nbrs.metas_df.loc[:, [x.name, y.name]].to_numpy()
         w = euclidean_distances(numpy_nbrs, [[r[x], r[y]]])
-        w = pt.fit_transform(w)
+        w = gaussian_transform(w)
 
         f_ind = 0
         for f in overlay.domain.variables:
             if isinstance(f, ContinuousVariable):
                 val1 = overlay[ind, f]
                 val2 = overlay[nbr_ind, f].X_df.to_numpy()
-                f_score = w * (val1 - val2)**2
-                print(np.mean(f_score))
-                score[ind, f_ind] = np.mean(f_score)
+                f_score = w * (val1 - val2) ** 2
+                score[f_ind, ind] = np.mean(f_score)
                 f_ind += 1
         ind += 1
-
-    print(score)
 
     out = []
     f_ind = 0
     for f in overlay.domain.variables:
-        out.append((f.name, np.mean(score[f_ind, :])))
+        if isinstance(f, ContinuousVariable):
+            out.append((f.name, np.mean(score[f_ind, :])))
+            f_ind += 1
 
     return out
 
-
-if __name__ == "__main__":
-    handle = WorldIndicators('main', 'biolab')
-    indicator_codes = [code for code, _, _, _ in handle.indicators()]
-    country_codes = [code for code, _ in handle.countries()]
-    random.seed(0)
-    indicator_codes = random.sample(indicator_codes, 20)
-    country_codes = random.sample(country_codes, 20)
-
-    df = handle.data(country_codes, indicator_codes, 2008)
-
-    reference = df.iloc[:, :10].fillna(0)
-    overlay = df.iloc[:, 10:].fillna(0)
-
-    ref_tsne = TSNE(n_components=2, learning_rate='auto', init='random').fit_transform(reference.to_numpy())
-
-    tSNE_X = ContinuousVariable("t-SNE-x")
-    tSNE_Y = ContinuousVariable("t-SNE-y")
-
-    overlay_table = table_from_frame(overlay)
-    ref_table = table_from_frame(reference)
-    ref_table = ref_table.add_column(tSNE_X, ref_tsne[:, 0], to_metas=True)
-    ref_table = ref_table.add_column(tSNE_Y, ref_tsne[:, 1], to_metas=True)
-
-    scores = score_projections(ref_table, tSNE_X, tSNE_Y, overlay_table)
-    for i in scores:
-        print(i)
 

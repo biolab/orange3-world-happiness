@@ -7,6 +7,8 @@
 .idea
 *.iml
 /venv/
+.ipynb_checkpoints
+
 
 # File-based project format
 *.iws

@@ -1,40 +1,40 @@
-# World Happiness Study API
+Orange3 Example Add-on
+======================
 
-This is an implementation of python of API for access to remote Mongo database for a world happiness study.
-The data was collected from World Data Bank and World Happiness Reports.
+This is an example add-on for [Orange3](http://orange.biolab.si). Add-on can extend Orange either 
+in scripting or GUI part, or in both. We here focus on the GUI part and implement a simple (empty) widget,
+register it with Orange and add a new workflow with this widget to example tutorials.
 
-## Installation
+Installation
+------------
 
-Install requirements from `requirements.txt` file:
+To install the add-on from source run
 
-```shell
-python -m pip install .
-```
+    pip install .
 
-## Usage
-```python
-# First import script and create class object.
-from whstudy import WorldIndicators
+To register this add-on with Orange, but keep the code in the development directory (do not copy it to 
+Python's site-packages directory), run
 
-# To use already prepared mongo database
-db = WorldIndicators('main', 'biolab')
-  
-# To create a list of indicators and list of countries for further queries.
+    pip install -e .
 
-wdb_indicators = [code for code, desc, db, url in db.indicators() if db == 'WDI']
-whr_indicators = [code for code, desc, db, url in db.indicators() if db == 'WHR']
-code_countries = [code for code, fullname in db.countries()]
+Documentation / widget help can be built by running
 
-# To get data from remote database in a Pandas dataframe format, where rows consist of 
-# country codes and columns consist of `YYYY-indicator_code` if more then one year is 
-# requested otherwise indicator_code.
-    
-# To get wdb_indicators (some examples)
-df = db.data(code_countries, whr_indicators, 2019)
-df = db.data(code_countries, wdb_indicators, list(range(2000,2020)))
+    make html htmlhelp
 
-# To update data in the remote database you can use.
+from the doc directory.
 
-db.update(code_countries, wdb_indicators, list(range(1960,2020)), 'WDI')
-db.update(code_countries, whr_indicators, list(range(1960, 2020)), 'WHR')
-```
+Usage
+-----
+
+After the installation, the widget from this add-on is registered with Orange. To run Orange from the terminal,
+use
+
+    orange-canvas
+
+or
+
+    python -m Orange.canvas
+
+The new widget appears in the toolbox bar under the section Example.
+
+![screenshot](https://github.com/biolab/orange3-example-addon/blob/master/screenshot.png)

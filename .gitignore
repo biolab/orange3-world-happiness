@@ -9,6 +9,25 @@
 /venv/
 .ipynb_checkpoints
 
+# Build files
+build
+dist
+*.egg-info
+*.so
+*.pyd
+*.pyc
+MANIFEST
+
+# Cython generated files
+__pycache__
+
+# Editor files
+.idea/*
+*~
+.project
+.pydevproject
+.settings/*
+.DS_Store
 
 # File-based project format
 *.iws

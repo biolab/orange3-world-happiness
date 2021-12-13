@@ -38,6 +38,10 @@ DATA_FILES = [
 
 INSTALL_REQUIRES = [
     'Orange3',
+    'pandas',
+    'pymongo',
+    'wbgapi',
+    'dnspython'
 ]
 
 ENTRY_POINTS = {

@@ -2,14 +2,15 @@ from types import SimpleNamespace
 from typing import Any, List
 
 from AnyQt.QtCore import Qt, Signal
-from AnyQt.QtWidgets import QLabel, QGridLayout, QFormLayout, QLineEdit, QTableView
+from AnyQt.QtWidgets import QLabel, QGridLayout, QFormLayout, QLineEdit, \
+    QTableView, QTableWidget, QTableWidgetItem, QVBoxLayout, QListView, QScrollArea, QHeaderView
 
 from Orange.data import Table
 from Orange.data.pandas_compat import table_from_frame
-from Orange.widgets.settings import Setting
+from Orange.widgets.settings import Setting, ContextSetting
 from Orange.widgets.utils.concurrent import ConcurrentWidgetMixin, TaskState
 from Orange.widgets.utils.itemmodels import PyTableModel, TableModel
-from Orange.widgets.widget import OWWidget
+from Orange.widgets.widget import OWWidget, Output
 from Orange.widgets import gui
 
 from orangecontrib.owwhstudy.whstudy import WorldIndicators, AggregationMethods
@@ -56,32 +57,39 @@ def run(
     return results
 
 
-class IndexTableView(QTableView):
-    pressedAny = Signal()
-
-    def __init__(self):
+class IndexTableView(QTableWidget):
+    def __init__(self, data, *args):
         super().__init__(
             sortingEnabled=True,
-            editTriggers=QTableView.NoEditTriggers,
-            selectionBehavior=QTableView.SelectRows,
-            selectionMode=QTableView.ExtendedSelection,
-            cornerButtonEnabled=False
+            editTriggers=QTableWidget.NoEditTriggers,
+            selectionBehavior=QTableWidget.SelectRows,
+            selectionMode=QTableWidget.ExtendedSelection,
+            cornerButtonEnabled=False,
         )
-        self.verticalHeader().setDefaultSectionSize(22)
+
         self.verticalHeader().hide()
+        self.setRowCount(len(data))
+        self.setColumnCount(3)
+        self.setAlternatingRowColors(True)
+        self.data = data
+        self.horizontalHeader().setStretchLastSection(True)
 
-    def mousePressEvent(self, event):
-        super().mousePressEvent(event)
-        self.pressedAny.emit()
+        self.setData()
+        self.resizeColumnToContents(0)
+        self.resizeColumnToContents(1)
+        self.resizeRowsToContents()
+        self.verticalHeader().setDefaultSectionSize(50)
 
-
-class IndexTableModel(PyTableModel):
-    def data(self, index, role=Qt.DisplayRole):
-        if role in (gui.BarRatioRole, Qt.DisplayRole):
-            return super().data(index, Qt.EditRole)
-        if role == Qt.BackgroundColorRole and index.column() == 0:
-            return TableModel.ColorForRole[TableModel.Meta]
-        return super().data(index, role)
+    def setData(self):
+        horHeaders = ['Source', 'Group', 'Index name']
+        for n, (code, desc, src, _) in enumerate(self.data):
+            newitem = QTableWidgetItem(src)
+            self.setItem(n, 0, newitem)
+            newitem = QTableWidgetItem(code)
+            self.setItem(n, 1, newitem)
+            newitem = QTableWidgetItem(desc)
+            self.setItem(n, 2, newitem)
+        self.setHorizontalHeaderLabels(horHeaders)
 
 
 class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
@@ -92,25 +100,47 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
 
     agg_method: int = Setting(AggregationMethods.MEAN)
     index_freq: float = Setting(60)
+    year_indices: List = ContextSetting([0], exclude_metas=False)
+
+    class Outputs:
+        world_data = Output("World data", Table)
 
     def __init__(self):
         OWWidget.__init__(self)
         ConcurrentWidgetMixin.__init__(self)
-        self.countries: List = []
-        self.indicators: List = []
         super().__init__()
+        self.countries = MONGO_HANDLE.countries()
+        self.indicators = MONGO_HANDLE.indicators()
+        self.year_features = ['2020', '2019']
+        self.year_indices = [0]
         self._setup_gui()
 
     def _setup_gui(self):
         fbox = gui.widgetBox(self.controlArea, orientation=0)
 
         box = gui.widgetBox(fbox, "Index Filtering")
-        hbox = gui.hBox(box)
+        vbox = gui.hBox(box)
+
         grid = QFormLayout()
         grid.setContentsMargins(0, 0, 0, 0)
-        hbox.layout().addLayout(grid)
-        spin = gui.spin(hbox, self, 'index_freq', minv=1, maxv=100)
+        vbox.layout().addLayout(grid)
+        spin = gui.spin(vbox, self, 'index_freq', minv=1, maxv=100)
         grid.addRow("Index frequency (%)", spin)
+
+        vbox = gui.vBox(box)
+        gui.listBox(
+            vbox, self, 'year_indices', labels='year_features',
+            selectionMode=QListView.ExtendedSelection, box='Years'
+        )
+
+        # TODO: Listbox for years not displaying correctly.
+
+        box = gui.vBox(box, "Aggregation by year")
+        gui.comboBox(
+            box, self, "agg_method", items=AggregationMethods.ITEMS,
+            callback=self.set_aggregation
+        )
+
 
         box = gui.widgetBox(fbox, "Countries")
         self.__country_filter_line_edit = QLineEdit(
@@ -127,8 +157,10 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
             textChanged=self.__on_index_filter_changed,
             placeholderText="Filter..."
         )
+        self.index_table = IndexTableView(self.indicators)
         box.layout().addWidget(self.__index_filter_line_edit)
-
+        box.layout().addWidget(self.index_table)
+        self.index_table.show()
 
     def on_exception(self, ex: Exception):
         raise ex
@@ -137,6 +169,9 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         pass
 
     def on_partial_result(self, result: Any) -> None:
+        pass
+
+    def set_aggregation(self):
         pass
 
     def __on_country_filter_changed(self):

@@ -9,6 +9,7 @@ from pprint import pprint
 import wbgapi as wb
 import pandas as pd
 from pymongo import MongoClient, ReplaceOne
+from Orange.util import dummy_callback
 import datetime
 
 MONGODB_HOST = 'cluster0.vxftj.mongodb.net'
@@ -97,8 +98,10 @@ class WorldIndicators:
             out.append((doc['_id'], doc['desc'], doc['db'], doc['url']))
         return out
 
-    def data(self, countries, indicators, year, skip_empty_columns=True, skip_empty_rows=True, include_country_names=False):
+    def data(self, countries, indicators, year, skip_empty_columns=True,
+             skip_empty_rows=True, include_country_names=False, callback=dummy_callback):
         """ Function gets data from local database.
+        :param callback: callback function
         :param include_country_names: add collumn with country names
         :param skip_empty_rows: skip all NaN columns
         :param skip_empty_columns: skip all NaN rows
@@ -130,10 +133,15 @@ class WorldIndicators:
         if include_country_names:
             df = df.astype({"Country name": str})
 
+        steps = len(countries)
+        step = 1
+
+        callback(0, "Fetching data ...")
 
         # Fill Dataframe from local database
         collection = self.db.countries
-        for doc in collection.find({"_id": {"$in": countries}}):
+        for country in countries:
+            doc = collection.find_one({"_id": country})
             if include_country_names:
                 df.at[doc['_id'], "Country name"] = doc['name']
             for i in indicators:
@@ -146,6 +154,9 @@ class WorldIndicators:
                     else:
                         if str(year[0]) in values:
                             df.at[doc['_id'], i] = values[str(year[0])]
+            callback(step / steps)
+            step += 1
+
         if skip_empty_rows:
             df = df.dropna(axis=0, how='all')
 

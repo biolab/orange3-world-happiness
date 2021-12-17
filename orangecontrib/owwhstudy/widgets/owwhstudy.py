@@ -24,6 +24,7 @@ def run(
         countries: List,
         indices: List,
         years: List,
+        agg_method: int,
         state: TaskState
 ) -> Table:
     if not countries or not indices or not years:
@@ -37,11 +38,9 @@ def run(
         if state.is_interruption_requested():
             raise Exception
 
-    callback(0, "Fetching data ...")
-    steps = len(countries)
-    i = 1
-    main_df = MONGO_HANDLE.data(countries, indices, years)
+    main_df = MONGO_HANDLE.data(countries, indices, years, callback=callback)
     results = table_from_frame(main_df)
+    results = AggregationMethods.aggregate(results, countries, indices, years, agg_method)
     return results
 
 
@@ -66,7 +65,6 @@ class IndexTableView(QTableView):
         self.horizontalHeader().setStretchLastSection(True)
         self.verticalHeader().setDefaultSectionSize(22)
         self.verticalHeader().hide()
-        self.setAlternatingRowColors(True)
 
     def mousePressEvent(self, event):
         super().mousePressEvent(event)
@@ -79,47 +77,14 @@ class IndexTableModel(PyTableModel):
         super().wrap(table)
 
     def data(self, index, role=Qt.DisplayRole):
+        if role == Qt.BackgroundColorRole and index.column() == 0:
+            return TableModel.ColorForRole[TableModel.Meta]
         return super().data(index, role)
 
 
 class IndexFilterProxyModel(QSortFilterProxyModel):
     def sort(self, column: int, order: Qt.SortOrder = Qt.AscendingOrder):
         super().sort(column, order)
-
-
-# class IndexTableView(QTableWidget):
-#     def __init__(self, data, *args):
-#         super().__init__(
-#             sortingEnabled=True,
-#             editTriggers=QTableWidget.NoEditTriggers,
-#             selectionBehavior=QTableWidget.SelectRows,
-#             selectionMode=QTableWidget.ExtendedSelection,
-#             cornerButtonEnabled=False,
-#         )
-#
-#         self.verticalHeader().hide()
-#         self.setRowCount(len(data))
-#         self.setColumnCount(3)
-#         self.setAlternatingRowColors(True)
-#         self.data = data
-#         self.horizontalHeader().setStretchLastSection(True)
-#
-#         self.setData()
-#         self.resizeColumnToContents(0)
-#         self.resizeColumnToContents(1)
-#         self.resizeRowsToContents()
-#         self.verticalHeader().setDefaultSectionSize(50)
-#
-#     def setData(self):
-#         horHeaders = ['Source', 'Group', 'Index name']
-#         for n, (code, desc, src, _) in enumerate(self.data):
-#             newitem = QTableWidgetItem(src)
-#             self.setItem(n, 0, newitem)
-#             newitem = QTableWidgetItem(code)
-#             self.setItem(n, 1, newitem)
-#             newitem = QTableWidgetItem(desc)
-#             self.setItem(n, 2, newitem)
-#         self.setHorizontalHeaderLabels(horHeaders)
 
 
 class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
@@ -182,7 +147,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         abox = gui.vBox(box, "Aggregation by year")
         gui.comboBox(
             abox, self, "agg_method", items=AggregationMethods.ITEMS,
-            callback=self.set_aggregation
+            callback=self.commit
         )
         bbox = gui.vBox(box)
         gui.auto_send(bbox, self, "auto_apply")
@@ -252,16 +217,10 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         years = []
         for i in self.selected_years:
             years.append(int(self.year_features[i]))
-        print(list(self.selected_countries))
-        print(self.selected_indices)
-        print(years)
         self.start(
             run, list(self.selected_countries), self.selected_indices,
-            years
+            years, self.agg_method
         )
-
-    def set_aggregation(self):
-        pass
 
     def country_checked(self, item: CountryTreeWidgetItem, column):
         if item.country_code is not None:
@@ -275,7 +234,21 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         regions = [('AFR', 'Africa'), ('ECS', 'Europe & Central Asia'),
                    ('EAS', 'East Asia & Pacific'), ('LCN', 'Latin America and the Caribbean'),
                    ('NAC', 'North America'), ('SAS', 'South Asia')]
-        members = [wb.region.members(code) for (code, _) in regions]
+        members = [{'RWA', 'TZA', 'DZA', 'MAR', 'SEN', 'BDI', 'MOZ', 'GIN', 'EGY', 'MUS', 'GNQ', 'CIV', 'ZAF', 'SLE', 'STP',
+                    'UGA', 'ZWE', 'GNB', 'AGO', 'MDG', 'CPV', 'TCD', 'COD', 'COM', 'MWI', 'LSO', 'NGA', 'COG', 'NER', 'BFA',
+                    'SYC', 'SSD', 'TGO', 'ETH', 'TUN', 'SOM', 'KEN', 'DJI', 'BWA', 'LBY', 'ERI', 'GHA', 'GAB', 'GMB', 'CMR',
+                    'MRT', 'SDN', 'SWZ', 'BEN', 'NAM', 'MLI', 'LBR', 'CAF', 'ZMB'},
+                   {'AUT', 'HRV', 'SWE', 'TJK', 'AND', 'UKR', 'TUR', 'NOR', 'BIH', 'FIN', 'FRO', 'CYP', 'GBR', 'HUN', 'ISL',
+                    'BEL', 'PRT', 'MCO', 'IMN', 'LTU', 'MDA', 'SVK', 'CHI', 'TKM', 'LVA', 'SRB', 'MKD', 'FRA', 'LIE', 'ESP',
+                    'GRL', 'GIB', 'ITA', 'SMR', 'IRL', 'DNK', 'POL', 'AZE', 'CHE', 'EST', 'ARM', 'KAZ', 'LUX', 'ALB', 'GEO',
+                    'NLD', 'DEU', 'SVN', 'CZE', 'MNE', 'RUS', 'BLR', 'GRC', 'XKX', 'UZB', 'KGZ', 'ROU', 'BGR'},
+                   {'JPN', 'PRK', 'VNM', 'THA', 'FSM', 'HKG', 'MMR', 'SGP', 'TUV', 'TON', 'PNG', 'VUT', 'NRU', 'ASM', 'PYF',
+                    'MYS', 'SLB', 'AUS', 'FJI', 'BRN', 'MNG', 'PHL', 'PLW', 'TWN', 'KHM', 'KOR', 'KIR', 'MHL', 'LAO', 'GUM',
+                    'MNP', 'IDN', 'WSM', 'MAC', 'NCL', 'NZL', 'TLS', 'CHN'},
+                   {'GRD', 'BRB', 'SUR', 'VEN', 'DOM', 'BOL', 'GTM', 'LCA', 'JAM', 'VCT', 'HTI', 'PER', 'SXM', 'TCA', 'GUY',
+                    'MAF', 'ECU', 'BHS', 'MEX', 'ATG', 'HND', 'VIR', 'KNA', 'DMA', 'BLZ', 'PRI', 'NIC', 'COL', 'CYM', 'URY',
+                    'VGB', 'CHL', 'PAN', 'BRA', 'TTO', 'ABW', 'CUB', 'ARG', 'SLV', 'CUW', 'PRY', 'CRI'}, {'USA', 'CAN', 'BMU'},
+                   {'LKA', 'MDV', 'IND', 'AFG', 'NPL', 'BGD', 'BTN', 'PAK'}]
         tree = {'All': {
             'Regions': {
                 'Africa': [],
@@ -318,11 +291,6 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.index_view.selectionModel().select(
             selection, QItemSelectionModel.ClearAndSelect
         )
-
-
-
-
-
 
 
 if __name__ == "__main__":

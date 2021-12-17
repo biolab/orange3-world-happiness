@@ -1,10 +1,8 @@
-<?xml version="1.0"?>
-<svg width="48" height="48" xmlns="http://www.w3.org/2000/svg">
- <!-- Created with SVG-edit - http://svg-edit.googlecode.com/ -->
- <title>Category Icon</title>
- <g>
-  <title>Layer 1</title>
-  <text transform="matrix(2.1520881448613944,0,0,1.827148799789029,-27.0810469525093,-19.479205367873945) " xml:space="preserve" text-anchor="middle" font-family="serif" font-size="24" id="svg_1" y="31.557737" x="24.102223" stroke-width="0" stroke="#000000" fill="#000000">0</text>
-  <line id="svg_2" y2="7.555554" x2="39.555552" y1="37.252523" x1="9.656563" stroke-width="5" stroke="#000000" fill="none"/>
- </g>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="420"
+height="420" stroke="#000" fill="none">
+<path stroke-width="26"
+d="M209,15a195,195 0 1,0 2,0z"/>
+<path stroke-width="18"
+d="m210,15v390m195-195H15M59,90a260,260 0 0,0 302,0 m0,240 a260,260 0 0,0-302,0M195,20a250,250 0 0,0 0,382 m30,0 a250,250 0 0,0 0-382"/>
 </svg>

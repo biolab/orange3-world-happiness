@@ -5,9 +5,9 @@ from os import path, walk
 import sys
 from setuptools import setup, find_packages
 
-NAME = "Orange3 Example Add-on"
+NAME = "Orange3 World Socioeconomic data addon"
 
-VERSION = "0.0.3"
+VERSION = "0.0.1"
 
 AUTHOR = 'Bioinformatics Laboratory, FRI UL'
 AUTHOR_EMAIL = 'contact@orange.biolab.si'
@@ -62,7 +62,7 @@ ENTRY_POINTS = {
         # Syntax: category name = path.to.package.containing.widgets
         # Widget category specification can be seen in
         #    orangecontrib/owwhstudy/widgets/__init__.py
-        'Examples = orangecontrib.owwhstudy.widgets',
+        'World Data = orangecontrib.owwhstudy.widgets',
     ),
 
     # Register widget help

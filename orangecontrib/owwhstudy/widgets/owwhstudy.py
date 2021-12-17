@@ -1,9 +1,9 @@
 from types import SimpleNamespace
-from typing import Any, List
+from typing import Any, List, Set
 
-from AnyQt.QtCore import Qt, Signal
+from AnyQt.QtCore import Qt, Signal, QSortFilterProxyModel, QItemSelection, QItemSelectionModel
 from AnyQt.QtWidgets import QLabel, QGridLayout, QFormLayout, QLineEdit, \
-    QTableView, QTableWidget, QTableWidgetItem, QVBoxLayout, QListView, QScrollArea, QHeaderView
+    QTableView, QListView, QTreeWidget, QTreeWidgetItem
 
 from Orange.data import Table
 from Orange.data.pandas_compat import table_from_frame
@@ -15,22 +15,19 @@ from Orange.widgets import gui
 
 from orangecontrib.owwhstudy.whstudy import WorldIndicators, AggregationMethods
 
+import wbgapi as wb
+
 MONGO_HANDLE = WorldIndicators('main', 'biolab')
-
-
-class Results(SimpleNamespace):
-    data: Table
 
 
 def run(
         countries: List,
-        indicators: List,
+        indices: List,
         years: List,
         state: TaskState
-) -> Results:
-    results = Results(data=None)
-    if not countries or not indicators or not years:
-        return results
+) -> Table:
+    if not countries or not indices or not years:
+        return None
 
     # Define progress callback
     def callback(i: float, status=""):
@@ -43,53 +40,86 @@ def run(
     callback(0, "Fetching data ...")
     steps = len(countries)
     i = 1
-    for country_code in countries:
-        df = MONGO_HANDLE.data(country_code, indicators, years)
-
-        if not results.data:
-            results.data = table_from_frame(df)
-        else:
-            results.data.concatenate(table_from_frame(df))
-
-        callback(i / steps)
-        i += 1
-
+    main_df = MONGO_HANDLE.data(countries, indices, years)
+    results = table_from_frame(main_df)
     return results
 
 
-class IndexTableView(QTableWidget):
-    def __init__(self, data, *args):
+class CountryTreeWidgetItem(QTreeWidgetItem):
+    def __init__(self, parent, key, code):
+        super().__init__(parent, [key])
+        self.country_code = code
+
+
+class IndexTableView(QTableView):
+    pressedAny = Signal()
+
+    def __init__(self):
         super().__init__(
             sortingEnabled=True,
-            editTriggers=QTableWidget.NoEditTriggers,
-            selectionBehavior=QTableWidget.SelectRows,
-            selectionMode=QTableWidget.ExtendedSelection,
+            editTriggers=QTableView.NoEditTriggers,
+            selectionBehavior=QTableView.SelectRows,
+            selectionMode=QTableView.ExtendedSelection,
             cornerButtonEnabled=False,
         )
-
-        self.verticalHeader().hide()
-        self.setRowCount(len(data))
-        self.setColumnCount(3)
-        self.setAlternatingRowColors(True)
-        self.data = data
+        self.setItemDelegate(gui.ColoredBarItemDelegate(self))
         self.horizontalHeader().setStretchLastSection(True)
+        self.verticalHeader().setDefaultSectionSize(22)
+        self.verticalHeader().hide()
+        self.setAlternatingRowColors(True)
 
-        self.setData()
-        self.resizeColumnToContents(0)
-        self.resizeColumnToContents(1)
-        self.resizeRowsToContents()
-        self.verticalHeader().setDefaultSectionSize(50)
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)
+        self.pressedAny.emit()
 
-    def setData(self):
-        horHeaders = ['Source', 'Group', 'Index name']
-        for n, (code, desc, src, _) in enumerate(self.data):
-            newitem = QTableWidgetItem(src)
-            self.setItem(n, 0, newitem)
-            newitem = QTableWidgetItem(code)
-            self.setItem(n, 1, newitem)
-            newitem = QTableWidgetItem(desc)
-            self.setItem(n, 2, newitem)
-        self.setHorizontalHeaderLabels(horHeaders)
+
+class IndexTableModel(PyTableModel):
+    def wrap(self, table):
+        table = [(db, code, desc) for (code, desc, db, _) in table]
+        super().wrap(table)
+
+    def data(self, index, role=Qt.DisplayRole):
+        return super().data(index, role)
+
+
+class IndexFilterProxyModel(QSortFilterProxyModel):
+    def sort(self, column: int, order: Qt.SortOrder = Qt.AscendingOrder):
+        super().sort(column, order)
+
+
+# class IndexTableView(QTableWidget):
+#     def __init__(self, data, *args):
+#         super().__init__(
+#             sortingEnabled=True,
+#             editTriggers=QTableWidget.NoEditTriggers,
+#             selectionBehavior=QTableWidget.SelectRows,
+#             selectionMode=QTableWidget.ExtendedSelection,
+#             cornerButtonEnabled=False,
+#         )
+#
+#         self.verticalHeader().hide()
+#         self.setRowCount(len(data))
+#         self.setColumnCount(3)
+#         self.setAlternatingRowColors(True)
+#         self.data = data
+#         self.horizontalHeader().setStretchLastSection(True)
+#
+#         self.setData()
+#         self.resizeColumnToContents(0)
+#         self.resizeColumnToContents(1)
+#         self.resizeRowsToContents()
+#         self.verticalHeader().setDefaultSectionSize(50)
+#
+#     def setData(self):
+#         horHeaders = ['Source', 'Group', 'Index name']
+#         for n, (code, desc, src, _) in enumerate(self.data):
+#             newitem = QTableWidgetItem(src)
+#             self.setItem(n, 0, newitem)
+#             newitem = QTableWidgetItem(code)
+#             self.setItem(n, 1, newitem)
+#             newitem = QTableWidgetItem(desc)
+#             self.setItem(n, 2, newitem)
+#         self.setHorizontalHeaderLabels(horHeaders)
 
 
 class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
@@ -100,7 +130,10 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
 
     agg_method: int = Setting(AggregationMethods.MEAN)
     index_freq: float = Setting(60)
-    year_indices: List = ContextSetting([0], exclude_metas=False)
+    selected_years: List = Setting([])
+    selected_indices: List = Setting([])
+    selected_countries: Set = Setting(set())
+    auto_apply: bool = Setting(False)
 
     class Outputs:
         world_data = Output("World data", Table)
@@ -109,11 +142,24 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         OWWidget.__init__(self)
         ConcurrentWidgetMixin.__init__(self)
         super().__init__()
-        self.countries = MONGO_HANDLE.countries()
-        self.indicators = MONGO_HANDLE.indicators()
-        self.year_features = ['2020', '2019']
-        self.year_indices = [0]
+        self.year_features = []
+        self.country_features = MONGO_HANDLE.countries()
+        self.index_features = MONGO_HANDLE.indicators()
+        self.index_model = IndexTableModel(parent=self)
         self._setup_gui()
+
+        # Assign values to control views
+        self.year_features = [f"{x}" for x in range(2021, 1960, -1)]
+        self.index_model.wrap(self.index_features)
+        self.index_model.setHorizontalHeaderLabels(['Source', 'Group', 'Index name'])
+        self.index_view.resizeColumnToContents(0)
+        self.index_view.resizeColumnToContents(1)
+        self.index_view.resizeRowsToContents()
+        self.index_view.verticalHeader().setDefaultSectionSize(50)
+        self.index_view.setWordWrap(True)
+        ctree = self.create_country_tree(self.country_features)
+        self.set_country_tree(ctree, self.country_tree)
+        self.country_tree.itemChanged.connect(self.country_checked)
 
     def _setup_gui(self):
         fbox = gui.widgetBox(self.controlArea, orientation=0)
@@ -129,18 +175,17 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
 
         vbox = gui.vBox(box)
         gui.listBox(
-            vbox, self, 'year_indices', labels='year_features',
+            vbox, self, 'selected_years', labels='year_features',
             selectionMode=QListView.ExtendedSelection, box='Years'
         )
 
-        # TODO: Listbox for years not displaying correctly.
-
-        box = gui.vBox(box, "Aggregation by year")
+        abox = gui.vBox(box, "Aggregation by year")
         gui.comboBox(
-            box, self, "agg_method", items=AggregationMethods.ITEMS,
+            abox, self, "agg_method", items=AggregationMethods.ITEMS,
             callback=self.set_aggregation
         )
-
+        bbox = gui.vBox(box)
+        gui.auto_send(bbox, self, "auto_apply")
 
         box = gui.widgetBox(fbox, "Countries")
         self.__country_filter_line_edit = QLineEdit(
@@ -149,36 +194,133 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         )
         box.layout().addWidget(self.__country_filter_line_edit)
 
-
-        # TODO: Tree view for continents and countries with checkboxes
+        self.country_tree = QTreeWidget()
+        self.country_tree.setColumnCount(1)
+        self.country_tree.setColumnWidth(0, 300)
+        self.country_tree.setHeaderLabels(['Countries'])
+        box.layout().addWidget(self.country_tree)
 
         box = gui.widgetBox(fbox, "Index Selection")
         self.__index_filter_line_edit = QLineEdit(
             textChanged=self.__on_index_filter_changed,
             placeholderText="Filter..."
         )
-        self.index_table = IndexTableView(self.indicators)
         box.layout().addWidget(self.__index_filter_line_edit)
-        box.layout().addWidget(self.index_table)
-        self.index_table.show()
 
-    def on_exception(self, ex: Exception):
-        raise ex
+        self.index_view = IndexTableView()
+        self.index_view.horizontalHeader().sectionClicked.connect(
+            self.__on_index_horizontal_header_clicked)
+        box.layout().addWidget(self.index_view)
 
-    def on_done(self, result: Any) -> None:
-        pass
-
-    def on_partial_result(self, result: Any) -> None:
-        pass
-
-    def set_aggregation(self):
-        pass
+        proxy = IndexFilterProxyModel()
+        proxy.setFilterKeyColumn(-1)
+        proxy.setFilterCaseSensitivity(False)
+        self.index_view.setModel(proxy)
+        self.index_view.model().setSourceModel(self.index_model)
+        self.index_view.selectionModel().selectionChanged.connect(
+            self.__on_index_selection_changed
+        )
 
     def __on_country_filter_changed(self):
         pass
 
     def __on_index_filter_changed(self):
+        model = self.index_view.model()
+        model.setFilterFixedString(self.__index_filter_line_edit.text().strip())
+        self._select_index_rows()
+
+    def __on_index_selection_changed(self):
+        selected_rows = self.index_view.selectionModel().selectedRows(1)
+        model = self.index_view.model()
+        self.selected_indices = [model.data(model.index(i.row(), 1))
+                                 for i in selected_rows]
+        self.commit()
+
+    def __on_index_horizontal_header_clicked(self):
         pass
+
+    def on_exception(self, ex: Exception):
+        raise ex
+
+    def on_done(self, result: Any):
+        self.Outputs.world_data.send(result)
+
+    def on_partial_result(self, result: Any) -> None:
+        pass
+
+    def commit(self):
+        years = []
+        for i in self.selected_years:
+            years.append(int(self.year_features[i]))
+        print(list(self.selected_countries))
+        print(self.selected_indices)
+        print(years)
+        self.start(
+            run, list(self.selected_countries), self.selected_indices,
+            years
+        )
+
+    def set_aggregation(self):
+        pass
+
+    def country_checked(self, item: CountryTreeWidgetItem, column):
+        if item.country_code is not None:
+            if item.checkState(column) == Qt.Checked:
+                self.selected_countries.add(item.country_code)
+            else:
+                self.selected_countries.discard(item.country_code)
+
+    @staticmethod
+    def create_country_tree(data):
+        regions = [('AFR', 'Africa'), ('ECS', 'Europe & Central Asia'),
+                   ('EAS', 'East Asia & Pacific'), ('LCN', 'Latin America and the Caribbean'),
+                   ('NAC', 'North America'), ('SAS', 'South Asia')]
+        members = [wb.region.members(code) for (code, _) in regions]
+        tree = {'All': {
+            'Regions': {
+                'Africa': [],
+                'Europe & Central Asia': [],
+                'East Asia & Pacific': [],
+                'Latin America and the Caribbean': [],
+                'North America': [],
+                'South Asia': []
+            }
+        }}
+        regions_node = tree['All']['Regions']
+        for (code, name) in data:
+            for ind in range(len(regions)):
+                if code in members[ind]:
+                    regions_node[regions[ind][1]].append((code, name))
+        return tree
+
+    def set_country_tree(self, data, parent):
+        for key in sorted(data):
+            node = CountryTreeWidgetItem(parent, key[1], key[0]) if isinstance(key, tuple) else \
+                CountryTreeWidgetItem(parent, key, None)
+            state = Qt.Checked if key in self.selected_countries else Qt.Unchecked
+            node.setCheckState(0, state)
+            if isinstance(data, dict) and data[key]:
+                node.setExpanded(True)
+                node.setFlags(node.flags() | Qt.ItemIsAutoTristate)
+                self.set_country_tree(data[key], node)
+
+    def _select_index_rows(self):
+        model = self.index_view.model()
+        n_rows, n_columns = model.rowCount(), model.columnCount()
+        selection = QItemSelection()
+        for i in range(n_rows):
+            index = model.data(model.index(i, 1))
+            if index in self.selected_indices:
+                _selection = QItemSelection(model.index(i, 0),
+                                            model.index(i, n_columns - 1))
+                selection.merge(_selection, QItemSelectionModel.Select)
+
+        self.index_view.selectionModel().select(
+            selection, QItemSelectionModel.ClearAndSelect
+        )
+
+
+
 
 
 

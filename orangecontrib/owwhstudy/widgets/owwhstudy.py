@@ -283,7 +283,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
             state = Qt.Checked if key in self.selected_countries else Qt.Unchecked
             node.setCheckState(0, state)
             if isinstance(data, dict) and data[key]:
-                node.setExpanded(True)
+                node.setExpanded(key == 'All' or key == 'Regions')
                 node.setFlags(node.flags() | Qt.ItemIsAutoTristate)
                 self.set_country_tree(data[key], node)
 

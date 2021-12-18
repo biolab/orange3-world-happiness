@@ -99,8 +99,9 @@ class WorldIndicators:
         return out
 
     def data(self, countries, indicators, year, skip_empty_columns=True,
-             skip_empty_rows=True, include_country_names=False, callback=dummy_callback):
+             skip_empty_rows=True, include_country_names=True, callback=dummy_callback, index_freq=0):
         """ Function gets data from local database.
+        :param index_freq: percentage of not NaN values to keep indicator
         :param callback: callback function
         :param include_country_names: add collumn with country names
         :param skip_empty_rows: skip all NaN columns
@@ -128,6 +129,7 @@ class WorldIndicators:
 
         # Create appropriate pandas Dataframe
         df = pd.DataFrame(data=None, index=countries, columns=cols, dtype=float)
+        df.index.name = "Country code"
 
         # Convert country row to string
         if include_country_names:
@@ -163,6 +165,13 @@ class WorldIndicators:
         if skip_empty_columns:
             df = df.dropna(axis=1, how='all')
 
+        print(index_freq)
+        print(countries)
+        print(indicators)
+        print(year)
+        min_count = len(df) * index_freq*0.01
+        print(min_count)
+        df = df.dropna(thresh=min_count, axis=1)
         return df
 
     def update(self, countries, indicators, years, db):

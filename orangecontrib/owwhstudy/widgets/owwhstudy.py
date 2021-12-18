@@ -25,6 +25,7 @@ def run(
         indices: List,
         years: List,
         agg_method: int,
+        index_freq: int,
         state: TaskState
 ) -> Table:
     if not countries or not indices or not years:
@@ -38,9 +39,9 @@ def run(
         if state.is_interruption_requested():
             raise Exception
 
-    main_df = MONGO_HANDLE.data(countries, indices, years, callback=callback)
+    main_df = MONGO_HANDLE.data(countries, indices, years, callback=callback, index_freq=index_freq)
     results = table_from_frame(main_df)
-    results = AggregationMethods.aggregate(results, countries, indices, years, agg_method)
+    results = AggregationMethods.aggregate(results, countries, indices, years, agg_method if len(years) > 1 else 0)
     return results
 
 
@@ -91,9 +92,10 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
     name = "Socioeconomic Indices"
     description = "Gets requested socioeconomic data from WDB/WHR."
     icon = "icons/mywidget.svg"
-    want_main_area = False
+    want_main_area = True
+    resizing_enabled = True
 
-    agg_method: int = Setting(AggregationMethods.MEAN)
+    agg_method: int = Setting(AggregationMethods.NONE)
     index_freq: float = Setting(60)
     selected_years: List = Setting([])
     selected_indices: List = Setting([])
@@ -107,7 +109,8 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         OWWidget.__init__(self)
         ConcurrentWidgetMixin.__init__(self)
         super().__init__()
-        self.year_features = []
+        self.world_data = None
+        self.year_features = [f"{x}" for x in range(2021, 1960, -1)]
         self.country_features = MONGO_HANDLE.countries()
         self.index_features = MONGO_HANDLE.indicators()
         self.index_model = IndexTableModel(parent=self)
@@ -120,14 +123,13 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.index_view.resizeColumnToContents(0)
         self.index_view.resizeColumnToContents(1)
         self.index_view.resizeRowsToContents()
-        self.index_view.verticalHeader().setDefaultSectionSize(50)
-        self.index_view.setWordWrap(True)
         ctree = self.create_country_tree(self.country_features)
-        self.set_country_tree(ctree, self.country_tree)
         self.country_tree.itemChanged.connect(self.country_checked)
+        self.set_country_tree(ctree, self.country_tree)
+
 
     def _setup_gui(self):
-        fbox = gui.widgetBox(self.controlArea, orientation=0)
+        fbox = gui.widgetBox(self.controlArea, "", orientation=0)
 
         box = gui.widgetBox(fbox, "Index Filtering")
         vbox = gui.hBox(box)
@@ -157,15 +159,16 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
             textChanged=self.__on_country_filter_changed,
             placeholderText="Filter..."
         )
-        box.layout().addWidget(self.__country_filter_line_edit)
+        # box.layout().addWidget(self.__country_filter_line_edit)
 
         self.country_tree = QTreeWidget()
+        self.country_tree.setFixedWidth(400)
         self.country_tree.setColumnCount(1)
         self.country_tree.setColumnWidth(0, 300)
         self.country_tree.setHeaderLabels(['Countries'])
         box.layout().addWidget(self.country_tree)
 
-        box = gui.widgetBox(fbox, "Index Selection")
+        box = gui.widgetBox(self.mainArea, "Index Selection")
         self.__index_filter_line_edit = QLineEdit(
             textChanged=self.__on_index_filter_changed,
             placeholderText="Filter..."
@@ -219,7 +222,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
             years.append(int(self.year_features[i]))
         self.start(
             run, list(self.selected_countries), self.selected_indices,
-            years, self.agg_method
+            years, self.agg_method, self.index_freq
         )
 
     def country_checked(self, item: CountryTreeWidgetItem, column):
@@ -228,6 +231,13 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
                 self.selected_countries.add(item.country_code)
             else:
                 self.selected_countries.discard(item.country_code)
+
+    def _clear(self):
+        self.clear_messages()
+        self.cancel()
+        self.selected_countries = set()
+        self.selected_indices = []
+        self.selected_years = []
 
     @staticmethod
     def create_country_tree(data):

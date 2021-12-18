@@ -117,7 +117,7 @@ class AggregationMethods:
                     name = f"{year}-{indicator}"
                     if ContinuousVariable(name) in world_data.domain.variables:
                         values.append(row[name])
-                df.at[row['index'], indicator] = np.mean(values)
+                df.at[row['Country code'], indicator] = np.nanmean(values) if values else -1
         return table_from_frame(df)
 
     @staticmethod
@@ -160,7 +160,7 @@ class AggregationMethods:
                     name = f"{year}-{indicator}"
                     if ContinuousVariable(name) in world_data.domain.variables:
                         values.append(row[name])
-                df.at[row['index'], indicator] = np.median(values)
+                df.at[row['index'], indicator] = np.nanmedian(values) if values else -1
         return table_from_frame(df)
 
     @staticmethod
@@ -203,7 +203,7 @@ class AggregationMethods:
                     name = f"{year}-{indicator}"
                     if ContinuousVariable(name) in world_data.domain.variables:
                         values.append(row[name])
-                df.at[row['index'], indicator] = np.min(values)
+                df.at[row['index'], indicator] = np.nanmin(values) if values else -1
         return table_from_frame(df)
 
     @staticmethod
@@ -246,5 +246,5 @@ class AggregationMethods:
                     name = f"{year}-{indicator}"
                     if ContinuousVariable(name) in world_data.domain.variables:
                         values.append(row[name])
-                df.at[row['index'], indicator] = np.max(values)
+                df.at[row['index'], indicator] = np.nanmax(values) if values else -1
         return table_from_frame(df)

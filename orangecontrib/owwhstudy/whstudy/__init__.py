@@ -22,7 +22,6 @@ class AggregationMethods:
     @staticmethod
     def aggregate(
             world_data: Table,
-            countries: List,
             indicators: List,
             years: List,
             agg_method: int
@@ -34,8 +33,6 @@ class AggregationMethods:
         ----------
         world_data : Table
             Table with data of countries for each indicator and year.
-        countries : List
-            List of countries in results
         indicators : List
             List of indicator codes in results
         years : List
@@ -51,7 +48,7 @@ class AggregationMethods:
                 AggregationMethods.mean,
                 AggregationMethods.median,
                 AggregationMethods.min,
-                AggregationMethods.max][agg_method](world_data, countries, indicators, years)
+                AggregationMethods.max][agg_method](world_data, indicators, years)
 
     @staticmethod
     def none(
@@ -81,7 +78,6 @@ class AggregationMethods:
     @staticmethod
     def mean(
             world_data: Table,
-            countries: List,
             indicators: List,
             years: List
     ) -> Table:
@@ -103,12 +99,14 @@ class AggregationMethods:
         """
         # Construct a new Domain
         cols = []
-        if len(world_data.domain.metas) > 1:
-            cols.append("Country name")
         for i in indicators:
             cols.append(i)
 
+        countries = list(world_data.metas_df.iloc[:, 0])
         df = pd.DataFrame(data=None, index=countries, columns=cols, dtype=float)
+
+        if world_data.metas.shape[1] > 1:
+            df.insert(loc=1, column='Country name', value=list(world_data.metas_df.iloc[:, 1]))
 
         for row in world_data:
             for indicator in indicators:
@@ -117,13 +115,12 @@ class AggregationMethods:
                     name = f"{year}-{indicator}"
                     if ContinuousVariable(name) in world_data.domain.variables:
                         values.append(row[name])
-                df.at[row['Country code'], indicator] = np.nanmean(values) if values else -1
+                df.at[row['Country code'], indicator] = np.nanmean(values) if values else np.nan
         return table_from_frame(df)
 
     @staticmethod
     def median(
             world_data: Table,
-            countries: List,
             indicators: List,
             years: List
     ) -> Table:
@@ -134,8 +131,6 @@ class AggregationMethods:
         ----------
         world_data : list
             Table with data of countries for each indicator and year.
-        countries : List
-            List of countries in results
         indicators : List
             List of indicator codes in results
         years : List
@@ -144,14 +139,15 @@ class AggregationMethods:
         -------
         Aggregated indicator values by year.
         """
-        # Construct a new Domain
         cols = []
-        if len(world_data.domain.metas) > 1:
-            cols.append("Country name")
         for i in indicators:
             cols.append(i)
 
+        countries = list(world_data.metas_df.iloc[:, 0])
         df = pd.DataFrame(data=None, index=countries, columns=cols, dtype=float)
+
+        if world_data.metas.shape[1] > 1:
+            df.insert(loc=1, column='Country name', value=list(world_data.metas_df.iloc[:, 1]))
 
         for row in world_data:
             for indicator in indicators:
@@ -160,13 +156,12 @@ class AggregationMethods:
                     name = f"{year}-{indicator}"
                     if ContinuousVariable(name) in world_data.domain.variables:
                         values.append(row[name])
-                df.at[row['index'], indicator] = np.nanmedian(values) if values else -1
+                df.at[row['Country code'], indicator] = np.nanmedian(values) if values else np.nan
         return table_from_frame(df)
 
     @staticmethod
     def min(
             world_data: Table,
-            countries: List,
             indicators: List,
             years: List
     ) -> Table:
@@ -177,8 +172,6 @@ class AggregationMethods:
         ----------
         world_data : list
             Table with data of countries for each indicator and year.
-        countries : List
-            List of countries in results
         indicators : List
             List of indicator codes in results
         years : List
@@ -189,12 +182,14 @@ class AggregationMethods:
         """
         # Construct a new Domain
         cols = []
-        if len(world_data.domain.metas) > 1:
-            cols.append("Country name")
         for i in indicators:
             cols.append(i)
 
+        countries = list(world_data.metas_df.iloc[:, 0])
         df = pd.DataFrame(data=None, index=countries, columns=cols, dtype=float)
+
+        if world_data.metas.shape[1] > 1:
+            df.insert(loc=1, column='Country name', value=list(world_data.metas_df.iloc[:, 1]))
 
         for row in world_data:
             for indicator in indicators:
@@ -203,13 +198,12 @@ class AggregationMethods:
                     name = f"{year}-{indicator}"
                     if ContinuousVariable(name) in world_data.domain.variables:
                         values.append(row[name])
-                df.at[row['index'], indicator] = np.nanmin(values) if values else -1
+                df.at[row['Country code'], indicator] = np.nanmin(values) if values else np.nan
         return table_from_frame(df)
 
     @staticmethod
     def max(
             world_data: Table,
-            countries: List,
             indicators: List,
             years: List
     ) -> Table:
@@ -220,8 +214,6 @@ class AggregationMethods:
         ----------
         world_data : list
             Table with data of countries for each indicator and year.
-        countries : List
-            List of countries in results
         indicators : List
             List of indicator codes in results
         years : List
@@ -232,12 +224,14 @@ class AggregationMethods:
         """
         # Construct a new Domain
         cols = []
-        if len(world_data.domain.metas) > 1:
-            cols.append("Country name")
         for i in indicators:
             cols.append(i)
 
+        countries = list(world_data.metas_df.iloc[:, 0])
         df = pd.DataFrame(data=None, index=countries, columns=cols, dtype=float)
+
+        if world_data.metas.shape[1] > 1:
+            df.insert(loc=1, column='Country name', value=list(world_data.metas_df.iloc[:, 1]))
 
         for row in world_data:
             for indicator in indicators:
@@ -246,5 +240,5 @@ class AggregationMethods:
                     name = f"{year}-{indicator}"
                     if ContinuousVariable(name) in world_data.domain.variables:
                         values.append(row[name])
-                df.at[row['index'], indicator] = np.nanmax(values) if values else -1
+                df.at[row['Country code'], indicator] = np.nanmax(values) if values else np.nan
         return table_from_frame(df)

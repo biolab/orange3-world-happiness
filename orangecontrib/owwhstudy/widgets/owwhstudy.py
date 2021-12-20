@@ -41,7 +41,7 @@ def run(
 
     main_df = MONGO_HANDLE.data(countries, indices, years, callback=callback, index_freq=index_freq)
     results = table_from_frame(main_df)
-    results = AggregationMethods.aggregate(results, countries, indices, years, agg_method if len(years) > 1 else 0)
+    results = AggregationMethods.aggregate(results, indices, years, agg_method if len(years) > 1 else 0)
     return results
 
 

@@ -53,7 +53,6 @@ class AggregationMethods:
     @staticmethod
     def none(
             world_data: Table,
-            countries: List,
             indicators: List,
             years: List
     ) -> Table:
@@ -63,8 +62,6 @@ class AggregationMethods:
         ----------
         world_data : list
             Table with data of countries for each indicator and year.
-        countries : List
-            List of countries in results
         indicators : List
             List of indicator codes in results
         years : List

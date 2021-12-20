@@ -119,7 +119,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         # Assign values to control views
         self.year_features = [f"{x}" for x in range(2021, 1960, -1)]
         self.index_model.wrap(self.index_features)
-        self.index_model.setHorizontalHeaderLabels(['Source', 'Group', 'Index name'])
+        self.index_model.setHorizontalHeaderLabels(['Source', 'Index', 'Description'])
         self.index_view.resizeColumnToContents(0)
         self.index_view.resizeColumnToContents(1)
         self.index_view.resizeRowsToContents()

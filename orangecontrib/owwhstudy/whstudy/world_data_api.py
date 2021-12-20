@@ -140,14 +140,14 @@ class WorldIndicators:
 
         callback(0, "Fetching data ...")
 
-        query_filter = {'-id': 1, 'name': 1}
-        for i in indicators:
-            query_filter[f'indicators.{i}'] = 1
+        # query_filter = {'-id': 1, 'name': 1}
+        # for i in indicators:
+        #     query_filter[f'indicators.{i}'] = 1
 
         # Fill Dataframe from local database
         collection = self.db.countries
         for country in countries:
-            doc = collection.find_one({"_id": country}, query_filter)
+            doc = collection.find_one({"_id": country})
             if include_country_names:
                 df.at[doc['_id'], "Country name"] = doc['name']
             for i in indicators:

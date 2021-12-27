@@ -31,21 +31,8 @@ def find_indicator_desc(code, db):
             raise ValueError(f"Invalid indicator code {code}.")
 
         return indicator[0]['value']
-    elif db == 'WHR':
-        for item in whr_indicators:
-            if item[0] == code:
-                return item[1]
-
-
-whr_indicators = [('HAP.SCORE', 'Ladder score'),
-                  ('LOG.GDP.PER.CAP', 'Logged GDP per capita'),
-                  ('SOC.SUP', 'Social support'),
-                  ('HEA.LIF.EXP', 'Healthy life expectancy'),
-                  ('FRE.LIF.CHO', 'Freedom to make life choices'),
-                  ('GEN.SCORE', 'Generosity'),
-                  ('PER.OF.COR', 'Perceptions of corruption')
-                  ]
-
+    else:
+        return ""
 
 class WorldIndicators:
 
@@ -95,7 +82,7 @@ class WorldIndicators:
         cursor = self.db.indicators.find({})
         out = []
         for doc in cursor:
-            out.append((doc['_id'], doc['desc'], doc['db'], doc['url']))
+            out.append((str.replace(doc['_id'], '_', '.'), doc['desc'], doc['db'], doc['url']))
         return out
 
     def data(self, countries, indicators, year, skip_empty_columns=True,
@@ -151,6 +138,8 @@ class WorldIndicators:
             if include_country_names:
                 df.at[doc['_id'], "Country name"] = doc['name']
             for i in indicators:
+                # Must change indicator code to underscores because of Mongo naming restrictions
+                i = str.replace(i, '.', '_')
                 if i in doc['indicators']:
                     values = doc['indicators'][i]
                     if len(year) > 1:
@@ -196,12 +185,15 @@ class WorldIndicators:
 
         # Create indicator documents if they don't exist
         for code in indicators:
-            if len(list(self.db.indicators.find({"_id": code}).limit(1))) == 0:
+            indic_code = str.replace(code, ".", "_")
+            if len(list(self.db.indicators.find({"_id": indic_code}).limit(1))) == 0:
+                desc = find_indicator_desc(code, db)
                 doc = {
-                    "_id": code,
-                    "desc": find_indicator_desc(code, db),
+                    "_id": indic_code,
+                    "desc": desc,
+                    "is_relative": '%' in desc,
                     "db": db,
-                    "url": None
+                    "url": f"https://data.worldbank.org/indicator/{code}" if db == 'WDI' else None
                 }
                 self.db.indicators.insert_one(doc)
 
@@ -232,6 +224,9 @@ class WorldIndicators:
                         if len(indicators) > 1:
                             indic_code = row['series']
 
+                        # Must change indicator code to underscores because of Mongo naming restrictions
+                        indic_code = str.replace(indic_code, '.', '_')
+
                         if hasattr(doc['indicators'], indic_code):
                             indic = doc['indicators'][indic_code]
                         else:
@@ -252,20 +247,22 @@ class WorldIndicators:
 
             for country_code in countries:
                 doc = self.db.countries.find_one({"_id": country_code})
+                country_key = find_country_name(country_code)
 
                 if doc is None:
                     doc = {
                         "_id": country_code,
-                        "name": find_country_name(country_code),
+                        "name": country_key,
                         "indicators": {}
                     }
 
-                country_key = find_country_name(country_code)
                 country_df = df[df.index == country_key]
                 country_df = country_df.set_index('year')
 
                 for indicator_code in indicators:
                     indic_key = find_indicator_desc(indicator_code, db)
+                    # Must change indicator code to underscores because of Mongo naming restrictions
+                    indic_key = str.replace(indic_key, '.', '_')
 
                     if indic_key in df.columns:
                         if hasattr(doc['indicators'], indicator_code):

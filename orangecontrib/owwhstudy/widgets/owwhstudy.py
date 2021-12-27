@@ -4,6 +4,7 @@ from typing import Any, List, Set
 from AnyQt.QtCore import Qt, Signal, QSortFilterProxyModel, QItemSelection, QItemSelectionModel
 from AnyQt.QtWidgets import QLabel, QGridLayout, QFormLayout, QLineEdit, \
     QTableView, QListView, QTreeWidget, QTreeWidgetItem
+from AnyQt.QtGui import QStandardItem
 
 from Orange.data import Table
 from Orange.data.pandas_compat import table_from_frame
@@ -14,8 +15,6 @@ from Orange.widgets.widget import OWWidget, Output
 from Orange.widgets import gui
 
 from orangecontrib.owwhstudy.whstudy import WorldIndicators, AggregationMethods
-
-import wbgapi as wb
 
 MONGO_HANDLE = WorldIndicators('main', 'biolab')
 
@@ -70,6 +69,11 @@ class IndexTableView(QTableView):
     def mousePressEvent(self, event):
         super().mousePressEvent(event)
         self.pressedAny.emit()
+
+
+class IntexTableItem(QStandardItem):
+    def __init__(self, text):
+        super().__init__(text)
 
 
 class IndexTableModel(PyTableModel):
@@ -127,7 +131,6 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.country_tree.itemChanged.connect(self.country_checked)
         self.set_country_tree(ctree, self.country_tree)
 
-
     def _setup_gui(self):
         fbox = gui.widgetBox(self.controlArea, "", orientation=0)
 
@@ -148,8 +151,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
 
         abox = gui.vBox(box, "Aggregation by year")
         gui.comboBox(
-            abox, self, "agg_method", items=AggregationMethods.ITEMS,
-            callback=self.commit
+            abox, self, "agg_method", items=AggregationMethods.ITEMS
         )
         bbox = gui.vBox(box)
         gui.auto_send(bbox, self, "auto_apply")
@@ -182,8 +184,9 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
 
         proxy = IndexFilterProxyModel()
         proxy.setFilterKeyColumn(-1)
-        proxy.setFilterCaseSensitivity(False)
+        proxy.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self.index_view.setModel(proxy)
+        self.index_view.setSortingEnabled(True)
         self.index_view.model().setSourceModel(self.index_model)
         self.index_view.selectionModel().selectionChanged.connect(
             self.__on_index_selection_changed
@@ -200,8 +203,11 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
     def __on_index_selection_changed(self):
         selected_rows = self.index_view.selectionModel().selectedRows(1)
         model = self.index_view.model()
-        self.selected_indices = [model.data(model.index(i.row(), 1))
-                                 for i in selected_rows]
+        self.selected_indices = []
+        for i in selected_rows:
+            code = model.data(model.index(i.row, 0))
+            desc = model.data(model.index(i.row, 1))
+            self.selected_indices.append((code, desc))
         self.commit()
 
     def __on_index_horizontal_header_clicked(self):

@@ -110,9 +110,11 @@ class WorldIndicators:
         if len(year) > 1:
             for i in indicators:
                 for y in year:
-                    cols.append(f"{y}-{i}")
+                    code = str.replace(i, '_', '.')
+                    cols.append(f"{y}-{code}")
         else:
-            cols.extend(indicators)
+            for i in indicators:
+                cols.append(str.replace(i, '_', '.'))
 
         # Create appropriate pandas Dataframe
         df = pd.DataFrame(data=None, index=countries, columns=cols, dtype=float)
@@ -139,16 +141,16 @@ class WorldIndicators:
                 df.at[doc['_id'], "Country name"] = doc['name']
             for i in indicators:
                 # Must change indicator code to underscores because of Mongo naming restrictions
-                i = str.replace(i, '.', '_')
-                if i in doc['indicators']:
-                    values = doc['indicators'][i]
+                code = str.replace(i, '.', '_')
+                if code in doc['indicators']:
+                    values = doc['indicators'][code]
                     if len(year) > 1:
                         for y in year:
                             if str(y) in values:
                                 df.at[doc['_id'], f"{y}-{i}"] = values[str(y)]
                     else:
                         if str(year[0]) in values:
-                            df.at[doc['_id'], i] = values[str(year[0])]
+                            df.at[doc['_id'], code] = values[str(year[0])]
             callback(step / steps)
             step += 1
 

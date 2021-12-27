@@ -203,11 +203,8 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
     def __on_index_selection_changed(self):
         selected_rows = self.index_view.selectionModel().selectedRows(1)
         model = self.index_view.model()
-        self.selected_indices = []
-        for i in selected_rows:
-            code = model.data(model.index(i.row, 0))
-            desc = model.data(model.index(i.row, 1))
-            self.selected_indices.append((code, desc))
+        self.selected_indices = [model.data(model.index(i.row(), 1))
+                                 for i in selected_rows]
         self.commit()
 
     def __on_index_horizontal_header_clicked(self):

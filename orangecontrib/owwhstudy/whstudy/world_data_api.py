@@ -110,11 +110,10 @@ class WorldIndicators:
         if len(year) > 1:
             for i in indicators:
                 for y in year:
-                    code = str.replace(i, '_', '.')
-                    cols.append(f"{y}-{code}")
+                    cols.append(f"{y}-{i}")
         else:
             for i in indicators:
-                cols.append(str.replace(i, '_', '.'))
+                cols.append(i)
 
         # Create appropriate pandas Dataframe
         df = pd.DataFrame(data=None, index=countries, columns=cols, dtype=float)
@@ -129,14 +128,15 @@ class WorldIndicators:
 
         callback(0, "Fetching data ...")
 
-        # query_filter = {'-id': 1, 'name': 1}
-        # for i in indicators:
-        #     query_filter[f'indicators.{i}'] = 1
+        query_filter = {'_id': 1, 'name': 1}
+        for i in indicators:
+            code = str.replace(i, '.', '_')
+            query_filter[f'indicators.{code}'] = 1
 
         # Fill Dataframe from local database
         collection = self.db.countries
         for country in countries:
-            doc = collection.find_one({"_id": country})
+            doc = collection.find_one({"_id": country}, query_filter)
             if include_country_names:
                 df.at[doc['_id'], "Country name"] = doc['name']
             for i in indicators:
@@ -155,17 +155,12 @@ class WorldIndicators:
             step += 1
 
         if skip_empty_rows:
-            df = df.dropna(axis=0, how='all')
+            df = df.dropna(axis=0, thresh=0.95 * len(countries))
 
         if skip_empty_columns:
-            df = df.dropna(axis=1, how='all')
+            df = df.dropna(axis=1, thresh=0.95 * len(df))
 
-        print(index_freq)
-        print(countries)
-        print(indicators)
-        print(year)
         min_count = len(df) * index_freq*0.01
-        print(min_count)
         df = df.dropna(thresh=min_count, axis=1)
         return df
 

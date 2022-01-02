@@ -13,7 +13,7 @@ from Orange.widgets.utils.concurrent import ConcurrentWidgetMixin, TaskState
 from Orange.widgets.utils.itemmodels import PyTableModel, TableModel
 from Orange.widgets.widget import OWWidget, Output
 from Orange.widgets import gui
-
+import time
 from orangecontrib.owwhstudy.whstudy import WorldIndicators, AggregationMethods
 
 MONGO_HANDLE = WorldIndicators('main', 'biolab')
@@ -27,6 +27,7 @@ def run(
         index_freq: int,
         state: TaskState
 ) -> Table:
+    sTime = time.time()
     if not countries or not indices or not years:
         return None
 
@@ -41,6 +42,7 @@ def run(
     main_df = MONGO_HANDLE.data(countries, indices, years, callback=callback, index_freq=index_freq)
     results = table_from_frame(main_df)
     results = AggregationMethods.aggregate(results, indices, years, agg_method if len(years) > 1 else 0)
+    print(f"Elapsed time {time.time() - sTime}")
     return results
 
 

@@ -63,13 +63,14 @@ class AggregationMethods:
         world_data : list
             Table with data of countries for each indicator and year.
         indicators : List
-            List of indicator codes in results
+            List of indicator tuples
         years : List
             List of years in results
         Returns
         -------
         Aggregated indicator values by year.
         """
+
         return world_data
 
     @staticmethod

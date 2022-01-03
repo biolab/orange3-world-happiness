@@ -64,15 +64,13 @@ class WorldIndicators:
         :return: list of years with data
         """
 
-        # TODO Think of a more sensible implementation
         cursor = self.db.countries.find({}, {"indicators": 1})
-        years = []
+        years = set()
         for doc in cursor:
             for _, val in doc['indicators'].items():
                 for key in val.keys():
-                    if key not in years:
-                        years.append(key)
-        return years
+                    years.add(key)
+        return list(years)
 
     def indicators(self):
         """ Function gets data from local database.
@@ -150,7 +148,7 @@ class WorldIndicators:
                                 df.at[doc['_id'], f"{y}-{i}"] = values[str(y)]
                     else:
                         if str(year[0]) in values:
-                            df.at[doc['_id'], code] = values[str(year[0])]
+                            df.at[doc['_id'], i] = values[str(year[0])]
             callback(step / steps)
             step += 1
 

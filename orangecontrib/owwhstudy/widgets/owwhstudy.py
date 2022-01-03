@@ -21,14 +21,13 @@ MONGO_HANDLE = WorldIndicators('main', 'biolab')
 
 def run(
         countries: List,
-        indices: List,
+        indicators: List,
         years: List,
         agg_method: int,
         index_freq: int,
         state: TaskState
 ) -> Table:
-    sTime = time.time()
-    if not countries or not indices or not years:
+    if not countries or not indicators or not years:
         return None
 
     # Define progress callback
@@ -39,10 +38,22 @@ def run(
         if state.is_interruption_requested():
             raise Exception
 
-    main_df = MONGO_HANDLE.data(countries, indices, years, callback=callback, index_freq=index_freq)
+    indicator_codes = [code for (_, code, _) in indicators]
+
+    print(indicator_codes)
+    print(years)
+    print(countries)
+
+    main_df = MONGO_HANDLE.data(countries, indicator_codes, years, callback=callback, index_freq=index_freq)
     results = table_from_frame(main_df)
-    results = AggregationMethods.aggregate(results, indices, years, agg_method if len(years) > 1 else 0)
-    print(f"Elapsed time {time.time() - sTime}")
+
+    # Add descriptions to indicators
+    for attrib in results.domain.attributes:
+        for (_, code, desc) in indicators:
+            if code in attrib.name:
+                attrib.attributes["description"] = desc
+
+    results = AggregationMethods.aggregate(results, indicators, years, agg_method if len(years) > 1 else 0)
     return results
 
 
@@ -73,12 +84,12 @@ class IndexTableView(QTableView):
         self.pressedAny.emit()
 
 
-class IntexTableItem(QStandardItem):
+class IndicatorTableItem(QStandardItem):
     def __init__(self, text):
         super().__init__(text)
 
 
-class IndexTableModel(PyTableModel):
+class IndicatorTableModel(PyTableModel):
     def wrap(self, table):
         table = [(db, code, desc) for (code, desc, db, _) in table]
         super().wrap(table)
@@ -89,7 +100,7 @@ class IndexTableModel(PyTableModel):
         return super().data(index, role)
 
 
-class IndexFilterProxyModel(QSortFilterProxyModel):
+class IndicatorFilterProxyModel(QSortFilterProxyModel):
     def sort(self, column: int, order: Qt.SortOrder = Qt.AscendingOrder):
         super().sort(column, order)
 
@@ -102,9 +113,9 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
     resizing_enabled = True
 
     agg_method: int = Setting(AggregationMethods.NONE)
-    index_freq: float = Setting(60)
+    indicator_freq: float = Setting(60)
     selected_years: List = Setting([])
-    selected_indices: List = Setting([])
+    selected_indicators: List = Setting([])
     selected_countries: Set = Setting(set())
     auto_apply: bool = Setting(False)
 
@@ -116,19 +127,19 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         ConcurrentWidgetMixin.__init__(self)
         super().__init__()
         self.world_data = None
-        self.year_features = [f"{x}" for x in range(2021, 1960, -1)]
+        self.year_features = []
         self.country_features = MONGO_HANDLE.countries()
-        self.index_features = MONGO_HANDLE.indicators()
-        self.index_model = IndexTableModel(parent=self)
+        self.indicator_features = MONGO_HANDLE.indicators()
+        self.indicator_model = IndicatorTableModel(parent=self)
         self._setup_gui()
 
         # Assign values to control views
-        self.year_features = [f"{x}" for x in range(2021, 1960, -1)]
-        self.index_model.wrap(self.index_features)
-        self.index_model.setHorizontalHeaderLabels(['Source', 'Index', 'Description'])
-        self.index_view.resizeColumnToContents(0)
-        self.index_view.resizeColumnToContents(1)
-        self.index_view.resizeRowsToContents()
+        self.year_features = [str(y) for y in range(2020, 1960, -1)]
+        self.indicator_model.wrap(self.indicator_features)
+        self.indicator_model.setHorizontalHeaderLabels(['Source', 'Index', 'Relative', 'Description'])
+        self.indicator_view.resizeColumnToContents(0)
+        self.indicator_view.resizeColumnToContents(1)
+        self.indicator_view.resizeRowsToContents()
         ctree = self.create_country_tree(self.country_features)
         self.country_tree.itemChanged.connect(self.country_checked)
         self.set_country_tree(ctree, self.country_tree)
@@ -136,13 +147,13 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
     def _setup_gui(self):
         fbox = gui.widgetBox(self.controlArea, "", orientation=0)
 
-        box = gui.widgetBox(fbox, "Index Filtering")
+        box = gui.widgetBox(fbox, "Indicator Filtering")
         vbox = gui.hBox(box)
 
         grid = QFormLayout()
         grid.setContentsMargins(0, 0, 0, 0)
         vbox.layout().addLayout(grid)
-        spin = gui.spin(vbox, self, 'index_freq', minv=1, maxv=100)
+        spin = gui.spin(vbox, self, 'indicator_freq', minv=1, maxv=100)
         grid.addRow("Index frequency (%)", spin)
 
         vbox = gui.vBox(box)
@@ -163,7 +174,6 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
             textChanged=self.__on_country_filter_changed,
             placeholderText="Filter..."
         )
-        # box.layout().addWidget(self.__country_filter_line_edit)
 
         self.country_tree = QTreeWidget()
         self.country_tree.setFixedWidth(400)
@@ -172,44 +182,47 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.country_tree.setHeaderLabels(['Countries'])
         box.layout().addWidget(self.country_tree)
 
-        box = gui.widgetBox(self.mainArea, "Index Selection")
-        self.__index_filter_line_edit = QLineEdit(
-            textChanged=self.__on_index_filter_changed,
+        box = gui.widgetBox(self.mainArea, "Indicator Selection")
+        self.__indicator_filter_line_edit = QLineEdit(
+            textChanged=self.__on_indicator_filter_changed,
             placeholderText="Filter..."
         )
-        box.layout().addWidget(self.__index_filter_line_edit)
+        box.layout().addWidget(self.__indicator_filter_line_edit)
 
-        self.index_view = IndexTableView()
-        self.index_view.horizontalHeader().sectionClicked.connect(
-            self.__on_index_horizontal_header_clicked)
-        box.layout().addWidget(self.index_view)
+        self.indicator_view = IndexTableView()
+        self.indicator_view.horizontalHeader().sectionClicked.connect(
+            self.__on_indicator_horizontal_header_clicked)
+        box.layout().addWidget(self.indicator_view)
 
-        proxy = IndexFilterProxyModel()
+        proxy = IndicatorFilterProxyModel()
         proxy.setFilterKeyColumn(-1)
         proxy.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        self.index_view.setModel(proxy)
-        self.index_view.setSortingEnabled(True)
-        self.index_view.model().setSourceModel(self.index_model)
-        self.index_view.selectionModel().selectionChanged.connect(
-            self.__on_index_selection_changed
+        self.indicator_view.setModel(proxy)
+        self.indicator_view.setSortingEnabled(True)
+        self.indicator_view.model().setSourceModel(self.indicator_model)
+        self.indicator_view.selectionModel().selectionChanged.connect(
+            self.__on_indicator_selection_changed
         )
 
     def __on_country_filter_changed(self):
         pass
 
-    def __on_index_filter_changed(self):
-        model = self.index_view.model()
-        model.setFilterFixedString(self.__index_filter_line_edit.text().strip())
-        self._select_index_rows()
+    def __on_indicator_filter_changed(self):
+        model = self.indicator_view.model()
+        model.setFilterFixedString(self.__indicator_filter_line_edit.text().strip())
+        self._select_indicator_rows()
 
-    def __on_index_selection_changed(self):
-        selected_rows = self.index_view.selectionModel().selectedRows(1)
-        model = self.index_view.model()
-        self.selected_indices = [model.data(model.index(i.row(), 1))
-                                 for i in selected_rows]
+    def __on_indicator_selection_changed(self):
+        selected_rows = self.indicator_view.selectionModel().selectedRows(1)
+        model = self.indicator_view.model()
+        self.selected_indicators = [
+            (model.data(model.index(i.row(), 0)),
+             model.data(model.index(i.row(), 1)),
+             model.data(model.index(i.row(), 2)))
+            for i in selected_rows]
         self.commit()
 
-    def __on_index_horizontal_header_clicked(self):
+    def __on_indicator_horizontal_header_clicked(self):
         pass
 
     def on_exception(self, ex: Exception):
@@ -226,8 +239,8 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         for i in self.selected_years:
             years.append(int(self.year_features[i]))
         self.start(
-            run, list(self.selected_countries), self.selected_indices,
-            years, self.agg_method, self.index_freq
+            run, list(self.selected_countries), self.selected_indicators,
+            years, self.agg_method, self.indicator_freq
         )
 
     def country_checked(self, item: CountryTreeWidgetItem, column):
@@ -241,7 +254,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.clear_messages()
         self.cancel()
         self.selected_countries = set()
-        self.selected_indices = []
+        self.selected_indicators = []
         self.selected_years = []
 
     @staticmethod
@@ -249,21 +262,22 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         regions = [('AFR', 'Africa'), ('ECS', 'Europe & Central Asia'),
                    ('EAS', 'East Asia & Pacific'), ('LCN', 'Latin America and the Caribbean'),
                    ('NAC', 'North America'), ('SAS', 'South Asia')]
-        members = [{'RWA', 'TZA', 'DZA', 'MAR', 'SEN', 'BDI', 'MOZ', 'GIN', 'EGY', 'MUS', 'GNQ', 'CIV', 'ZAF', 'SLE', 'STP',
-                    'UGA', 'ZWE', 'GNB', 'AGO', 'MDG', 'CPV', 'TCD', 'COD', 'COM', 'MWI', 'LSO', 'NGA', 'COG', 'NER', 'BFA',
-                    'SYC', 'SSD', 'TGO', 'ETH', 'TUN', 'SOM', 'KEN', 'DJI', 'BWA', 'LBY', 'ERI', 'GHA', 'GAB', 'GMB', 'CMR',
-                    'MRT', 'SDN', 'SWZ', 'BEN', 'NAM', 'MLI', 'LBR', 'CAF', 'ZMB'},
-                   {'AUT', 'HRV', 'SWE', 'TJK', 'AND', 'UKR', 'TUR', 'NOR', 'BIH', 'FIN', 'FRO', 'CYP', 'GBR', 'HUN', 'ISL',
-                    'BEL', 'PRT', 'MCO', 'IMN', 'LTU', 'MDA', 'SVK', 'CHI', 'TKM', 'LVA', 'SRB', 'MKD', 'FRA', 'LIE', 'ESP',
-                    'GRL', 'GIB', 'ITA', 'SMR', 'IRL', 'DNK', 'POL', 'AZE', 'CHE', 'EST', 'ARM', 'KAZ', 'LUX', 'ALB', 'GEO',
-                    'NLD', 'DEU', 'SVN', 'CZE', 'MNE', 'RUS', 'BLR', 'GRC', 'XKX', 'UZB', 'KGZ', 'ROU', 'BGR'},
-                   {'JPN', 'PRK', 'VNM', 'THA', 'FSM', 'HKG', 'MMR', 'SGP', 'TUV', 'TON', 'PNG', 'VUT', 'NRU', 'ASM', 'PYF',
-                    'MYS', 'SLB', 'AUS', 'FJI', 'BRN', 'MNG', 'PHL', 'PLW', 'TWN', 'KHM', 'KOR', 'KIR', 'MHL', 'LAO', 'GUM',
-                    'MNP', 'IDN', 'WSM', 'MAC', 'NCL', 'NZL', 'TLS', 'CHN'},
-                   {'GRD', 'BRB', 'SUR', 'VEN', 'DOM', 'BOL', 'GTM', 'LCA', 'JAM', 'VCT', 'HTI', 'PER', 'SXM', 'TCA', 'GUY',
-                    'MAF', 'ECU', 'BHS', 'MEX', 'ATG', 'HND', 'VIR', 'KNA', 'DMA', 'BLZ', 'PRI', 'NIC', 'COL', 'CYM', 'URY',
-                    'VGB', 'CHL', 'PAN', 'BRA', 'TTO', 'ABW', 'CUB', 'ARG', 'SLV', 'CUW', 'PRY', 'CRI'}, {'USA', 'CAN', 'BMU'},
-                   {'LKA', 'MDV', 'IND', 'AFG', 'NPL', 'BGD', 'BTN', 'PAK'}]
+        members = [
+            {'RWA', 'TZA', 'DZA', 'MAR', 'SEN', 'BDI', 'MOZ', 'GIN', 'EGY', 'MUS', 'GNQ', 'CIV', 'ZAF', 'SLE', 'STP',
+             'UGA', 'ZWE', 'GNB', 'AGO', 'MDG', 'CPV', 'TCD', 'COD', 'COM', 'MWI', 'LSO', 'NGA', 'COG', 'NER', 'BFA',
+             'SYC', 'SSD', 'TGO', 'ETH', 'TUN', 'SOM', 'KEN', 'DJI', 'BWA', 'LBY', 'ERI', 'GHA', 'GAB', 'GMB', 'CMR',
+             'MRT', 'SDN', 'SWZ', 'BEN', 'NAM', 'MLI', 'LBR', 'CAF', 'ZMB'},
+            {'AUT', 'HRV', 'SWE', 'TJK', 'AND', 'UKR', 'TUR', 'NOR', 'BIH', 'FIN', 'FRO', 'CYP', 'GBR', 'HUN', 'ISL',
+             'BEL', 'PRT', 'MCO', 'IMN', 'LTU', 'MDA', 'SVK', 'CHI', 'TKM', 'LVA', 'SRB', 'MKD', 'FRA', 'LIE', 'ESP',
+             'GRL', 'GIB', 'ITA', 'SMR', 'IRL', 'DNK', 'POL', 'AZE', 'CHE', 'EST', 'ARM', 'KAZ', 'LUX', 'ALB', 'GEO',
+             'NLD', 'DEU', 'SVN', 'CZE', 'MNE', 'RUS', 'BLR', 'GRC', 'XKX', 'UZB', 'KGZ', 'ROU', 'BGR'},
+            {'JPN', 'PRK', 'VNM', 'THA', 'FSM', 'HKG', 'MMR', 'SGP', 'TUV', 'TON', 'PNG', 'VUT', 'NRU', 'ASM', 'PYF',
+             'MYS', 'SLB', 'AUS', 'FJI', 'BRN', 'MNG', 'PHL', 'PLW', 'TWN', 'KHM', 'KOR', 'KIR', 'MHL', 'LAO', 'GUM',
+             'MNP', 'IDN', 'WSM', 'MAC', 'NCL', 'NZL', 'TLS', 'CHN'},
+            {'GRD', 'BRB', 'SUR', 'VEN', 'DOM', 'BOL', 'GTM', 'LCA', 'JAM', 'VCT', 'HTI', 'PER', 'SXM', 'TCA', 'GUY',
+             'MAF', 'ECU', 'BHS', 'MEX', 'ATG', 'HND', 'VIR', 'KNA', 'DMA', 'BLZ', 'PRI', 'NIC', 'COL', 'CYM', 'URY',
+             'VGB', 'CHL', 'PAN', 'BRA', 'TTO', 'ABW', 'CUB', 'ARG', 'SLV', 'CUW', 'PRY', 'CRI'}, {'USA', 'CAN', 'BMU'},
+            {'LKA', 'MDV', 'IND', 'AFG', 'NPL', 'BGD', 'BTN', 'PAK'}]
         tree = {'All': {
             'Regions': {
                 'Africa': [],
@@ -292,22 +306,23 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
                 node.setFlags(node.flags() | Qt.ItemIsAutoTristate)
                 self.set_country_tree(data[key], node)
 
-    def _select_index_rows(self):
-        model = self.index_view.model()
+    def _select_indicator_rows(self):
+        model = self.indicator_view.model()
         n_rows, n_columns = model.rowCount(), model.columnCount()
         selection = QItemSelection()
         for i in range(n_rows):
-            index = model.data(model.index(i, 1))
-            if index in self.selected_indices:
+            indicator = model.data(model.index(i, 1))
+            if indicator in self.selected_indicators:
                 _selection = QItemSelection(model.index(i, 0),
                                             model.index(i, n_columns - 1))
                 selection.merge(_selection, QItemSelectionModel.Select)
 
-        self.index_view.selectionModel().select(
+        self.indicator_view.selectionModel().select(
             selection, QItemSelectionModel.ClearAndSelect
         )
 
 
 if __name__ == "__main__":
     from Orange.widgets.utils.widgetpreview import WidgetPreview  # since Orange 3.20.0
+
     WidgetPreview(OWWHStudy).run()

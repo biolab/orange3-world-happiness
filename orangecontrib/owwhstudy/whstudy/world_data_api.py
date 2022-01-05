@@ -74,13 +74,13 @@ class WorldIndicators:
 
     def indicators(self):
         """ Function gets data from local database.
-        Indicator is of form (id, desc, db, home) possibly with url explanation.
+        Indicator is of form (db, code, is_relative, desc) possibly with url explanation.
         :return: list of indicators
         """
         cursor = self.db.indicators.find({})
         out = []
         for doc in cursor:
-            out.append((str.replace(doc['_id'], '_', '.'), doc['desc'], doc['db'], doc['url']))
+            out.append((doc['db'], str.replace(doc['_id'], '_', '.'), doc['is_relative'], doc['desc']))
         return out
 
     def data(self, countries, indicators, year, skip_empty_columns=True,
@@ -117,7 +117,7 @@ class WorldIndicators:
         df = pd.DataFrame(data=None, index=countries, columns=cols, dtype=float)
         df.index.name = "Country code"
 
-        # Convert country row to string
+        # Add country name column
         if include_country_names:
             df = df.astype({"Country name": str})
 
@@ -153,10 +153,11 @@ class WorldIndicators:
             step += 1
 
         if skip_empty_rows:
-            df = df.dropna(axis=0, thresh=0.95 * len(countries))
+            subset = df.columns.difference(["Country name"]) if include_country_names else df
+            df = df.dropna(subset=subset, axis=0, how='all')
 
         if skip_empty_columns:
-            df = df.dropna(axis=1, thresh=0.95 * len(df))
+            df = df.dropna(axis=1, how='all')
 
         min_count = len(df) * index_freq*0.01
         df = df.dropna(thresh=min_count, axis=1)

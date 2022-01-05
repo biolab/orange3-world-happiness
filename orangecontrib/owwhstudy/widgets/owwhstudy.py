@@ -1,4 +1,3 @@
-from types import SimpleNamespace
 from typing import Any, List, Set
 
 from AnyQt.QtCore import Qt, Signal, QSortFilterProxyModel, QItemSelection, QItemSelectionModel
@@ -13,7 +12,7 @@ from Orange.widgets.utils.concurrent import ConcurrentWidgetMixin, TaskState
 from Orange.widgets.utils.itemmodels import PyTableModel, TableModel
 from Orange.widgets.widget import OWWidget, Output
 from Orange.widgets import gui
-import time
+
 from orangecontrib.owwhstudy.whstudy import WorldIndicators, AggregationMethods
 
 MONGO_HANDLE = WorldIndicators('main', 'biolab')
@@ -40,12 +39,10 @@ def run(
 
     indicator_codes = [code for (_, code, _) in indicators]
 
-    print(indicator_codes)
-    print(years)
-    print(countries)
-
     main_df = MONGO_HANDLE.data(countries, indicator_codes, years, callback=callback, index_freq=index_freq)
     results = table_from_frame(main_df)
+
+    results = AggregationMethods.aggregate(results, years, agg_method if len(years) > 1 else 0)
 
     # Add descriptions to indicators
     for attrib in results.domain.attributes:
@@ -53,7 +50,6 @@ def run(
             if code in attrib.name:
                 attrib.attributes["description"] = desc
 
-    results = AggregationMethods.aggregate(results, indicators, years, agg_method if len(years) > 1 else 0)
     return results
 
 
@@ -91,12 +87,9 @@ class IndicatorTableItem(QStandardItem):
 
 class IndicatorTableModel(PyTableModel):
     def wrap(self, table):
-        table = [(db, code, desc) for (code, desc, db, _) in table]
         super().wrap(table)
 
     def data(self, index, role=Qt.DisplayRole):
-        if role == Qt.BackgroundColorRole and index.column() == 0:
-            return TableModel.ColorForRole[TableModel.Meta]
         return super().data(index, role)
 
 
@@ -218,7 +211,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.selected_indicators = [
             (model.data(model.index(i.row(), 0)),
              model.data(model.index(i.row(), 1)),
-             model.data(model.index(i.row(), 2)))
+             model.data(model.index(i.row(), 3)))
             for i in selected_rows]
         self.commit()
 

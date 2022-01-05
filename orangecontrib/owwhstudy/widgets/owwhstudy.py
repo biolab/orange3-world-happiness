@@ -1,19 +1,20 @@
 from typing import Any, List, Set
 from functools import partial
 
-from AnyQt.QtCore import Qt, Signal, QSortFilterProxyModel, QItemSelection, QItemSelectionModel, QTimer
+from AnyQt.QtCore import Qt, Signal, QSortFilterProxyModel, QItemSelection, QItemSelectionModel, \
+    QTimer, QModelIndex, QMimeData
 from AnyQt.QtWidgets import QLabel, QGridLayout, QFormLayout, QLineEdit, \
-    QTableView, QListView, QTreeWidget, QTreeWidgetItem
-from AnyQt.QtGui import QStandardItem
+    QTableView, QListView, QTreeWidget, QTreeWidgetItem, QAbstractItemView
+from AnyQt.QtGui import QStandardItem, QDrag
 
 from Orange.data import Table
 from Orange.data.pandas_compat import table_from_frame
 from Orange.widgets.settings import Setting, ContextSetting
 from Orange.widgets.utils import vartype
 from Orange.widgets.utils.concurrent import ConcurrentWidgetMixin, TaskState
-from Orange.widgets.utils.itemmodels import PyTableModel, TableModel
+from Orange.widgets.utils.itemmodels import PyTableModel, PyListModel
 from Orange.widgets.utils.listfilter import (
-    VariablesListItemView, slices, variables_filter
+    VariablesListItemView, slices, variables_filter, delslice
 )
 from Orange.widgets.widget import OWWidget, Output
 from Orange.widgets.data.owselectcolumns import VariablesListItemModel
@@ -32,6 +33,16 @@ def source_model(view):
         return view.model().sourceModel()
     else:
         return view.model()
+
+
+def source_indexes(indexes, view):
+    """ Map model indexes through a views QSortFilterProxyModel
+    """
+    model = view.model()
+    if isinstance(model, QSortFilterProxyModel):
+        return list(map(model.mapToSource, indexes))
+    else:
+        return indexes
 
 
 def run(
@@ -75,25 +86,242 @@ class CountryTreeWidgetItem(QTreeWidgetItem):
         self.country_code = code
 
 
-class IndicatorTableView(QTableView):
-    pressedAny = Signal()
+class IndicatorListItemView(QListView):
+    """ A Simple QListView subclass initialized for displaying
+    indicators.
+    """
+    #: Emitted with a Qt.DropAction when a drag/drop (originating from this
+    #: view) completed successfully
+    dragDropActionDidComplete = Signal(int)
 
-    def __init__(self):
+    def __init__(self, parent=None, acceptedType=tuple):
+        super().__init__(parent)
+
+        self.setSelectionMode(self.ExtendedSelection)
+        self.setAcceptDrops(True)
+        self.setDragEnabled(True)
+        self.setDropIndicatorShown(True)
+        self.setDragDropMode(self.DragDrop)
+        self.setDefaultDropAction(Qt.MoveAction)
+        self.setDragDropOverwriteMode(False)
+        self.setUniformItemSizes(True)
+        self.viewport().setAcceptDrops(True)
+
+        #: type | Tuple[type]
+        self.__acceptedType = acceptedType
+
+    def startDrag(self, supported_actions):
+        indices = self.selectionModel().selectedIndexes()
+        indices = [i for i in indices if i.flags() & Qt.ItemIsDragEnabled]
+        if indices:
+            data = self.model().mimeData(indices)
+            if not data:
+                return
+
+            drag = QDrag(self)
+            drag.setMimeData(data)
+
+            default_action = Qt.IgnoreAction
+            if self.defaultDropAction() != Qt.IgnoreAction and \
+                    supported_actions & self.defaultDropAction():
+                default_action = self.defaultDropAction()
+            elif (supported_actions & Qt.CopyAction and
+                  self.dragDropMode() != self.InternalMove):
+                default_action = Qt.CopyAction
+            res = drag.exec(supported_actions, default_action)
+            if res == Qt.MoveAction:
+                selected = self.selectionModel().selectedIndexes()
+                rows = list(map(QModelIndex.row, selected))
+                for s1, s2 in reversed(list(slices(rows))):
+                    delslice(self.model(), s1, s2)
+            self.dragDropActionDidComplete.emit(res)
+
+    def dropEvent(self, event):
+        # Bypass QListView.dropEvent on Qt >= 5.15.2.
+        # Because `startDrag` is overridden and does not dispatch to base
+        # implementation then `dropEvent` would need to be overridden also
+        # (private `d->dropEventMoved` state tracking due to QTBUG-87057 fix).
+        QAbstractItemView.dropEvent(self, event)
+
+    def dragEnterEvent(self, event):
+        """
+        Reimplemented from QListView.dragEnterEvent
+        """
+        if self.acceptsDropEvent(event):
+            event.accept()
+        else:
+            event.ignore()
+
+    def acceptsDropEvent(self, event):
+        """
+        Should the drop event be accepted?
+        """
+        # disallow drag/drops between windows
+        if event.source() is not None and \
+                event.source().window() is not self.window():
+            return False
+
+        mime = event.mimeData()
+        vars = mime.property('_items')
+        if vars is None:
+            return False
+
+        if not all(isinstance(var, self.__acceptedType) for var in vars):
+            return False
+
+        event.accept()
+        return True
+
+
+class IndicatorListItemModel(PyListModel):
+    """
+    A Indicator list item model specialized for Drag and Drop.
+    """
+    MIME_TYPE = "application/x-Orange-IndicatorListItemModelData"
+
+    def __init__(self, *args, placeholder=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.placeholder = placeholder
+
+    def data(self, index, role=Qt.DisplayRole):
+        return PyListModel.data(self, index, role)
+
+    def flags(self, index):
+        flags = super().flags(index)
+        if index.isValid():
+            flags |= Qt.ItemIsDragEnabled
+        else:
+            flags |= Qt.ItemIsDropEnabled
+        return flags
+
+    @staticmethod
+    def supportedDropActions():
+        return Qt.MoveAction  # pragma: no cover
+
+    @staticmethod
+    def supportedDragActions():
+        return Qt.MoveAction  # pragma: no cover
+
+    def mimeTypes(self):
+        return [self.MIME_TYPE]
+
+    def mimeData(self, indexlist):
+        """
+        Reimplemented.
+
+        For efficiency reasons only the variable instances are set on the
+        mime data (under `'_items'` property)
+        """
+        items = [self[index.row()] for index in indexlist]
+        mime = QMimeData()
+        mime.setData(self.MIME_TYPE, b'')
+        mime.setProperty("_items", items)
+        return mime
+
+    def dropMimeData(self, mime, action, row, column, parent):
+        """
+        Reimplemented.
+        """
+        if action == Qt.IgnoreAction:
+            return True  # pragma: no cover
+        if not mime.hasFormat(self.MIME_TYPE):
+            return False  # pragma: no cover
+        indicators = mime.property("_items")
+        if indicators is None:
+            return False  # pragma: no cover
+        if row < 0:
+            row = self.rowCount()
+
+        self[row:row] = indicators
+        return True
+
+
+class IndicatorTableView(QTableView):
+    """ A Simple QTableView subclass initialized for displaying
+    indicators.
+    """
+    dragDropActionDidComplete = Signal(int)
+
+    def __init__(self, parent=None):
         super().__init__(
+            parent,
             sortingEnabled=True,
             editTriggers=QTableView.NoEditTriggers,
             selectionBehavior=QTableView.SelectRows,
             selectionMode=QTableView.ExtendedSelection,
             cornerButtonEnabled=False,
         )
+        self.setSelectionMode(self.ExtendedSelection)
+        self.setAcceptDrops(True)
+        self.setDragEnabled(True)
+        self.setDropIndicatorShown(True)
+        self.setDragDropMode(self.DragDrop)
+        self.setDefaultDropAction(Qt.MoveAction)
+        self.setDragDropOverwriteMode(False)
+        self.viewport().setAcceptDrops(True)
+
         self.setItemDelegate(gui.ColoredBarItemDelegate(self))
         self.horizontalHeader().setStretchLastSection(True)
         self.verticalHeader().setDefaultSectionSize(22)
         self.verticalHeader().hide()
 
-    def mousePressEvent(self, event):
-        super().mousePressEvent(event)
-        self.pressedAny.emit()
+    def startDrag(self, supported_actions):
+        indices = self.selectionModel().selectedIndexes()
+        indices = [i for i in indices if i.flags() & Qt.ItemIsDragEnabled]
+
+        if indices:
+            data = self.model().mimeData(indices)
+            if not data:
+                return
+
+            drag = QDrag(self)
+            drag.setMimeData(data)
+            if self.defaultDropAction() != Qt.IgnoreAction and \
+                    supported_actions & self.defaultDropAction():
+                default_action = self.defaultDropAction()
+            elif (supported_actions & Qt.CopyAction and
+                  self.dragDropMode() != self.InternalMove):
+                default_action = Qt.CopyAction
+            res = drag.exec(supported_actions, default_action)
+            if res == Qt.MoveAction:
+                selected = self.selectionModel().selectedIndexes()
+                rows = list(map(QModelIndex.row, selected))
+                for s1, s2 in reversed(list(slices(rows))):
+                    delslice(self.model(), s1, s2)
+            self.dragDropActionDidComplete.emit(res)
+
+    def dropEvent(self, event):
+        # Bypass QListView.dropEvent on Qt >= 5.15.2.
+        # Because `startDrag` is overridden and does not dispatch to base
+        # implementation then `dropEvent` would need to be overridden also
+        # (private `d->dropEventMoved` state tracking due to QTBUG-87057 fix).
+        QAbstractItemView.dropEvent(self, event)
+
+    def dragEnterEvent(self, event):
+        """
+        Reimplemented from QListView.dragEnterEvent
+        """
+        if self.acceptsDropEvent(event):
+            event.accept()
+        else:
+            event.ignore()
+
+    def acceptsDropEvent(self, event):
+        """
+        Should the drop event be accepted?
+        """
+        # disallow drag/drops between windows
+        if event.source() is not None and \
+                event.source().window() is not self.window():
+            return False
+
+        mime = event.mimeData()
+        vars = mime.property('_items')
+        if vars is None:
+            return False
+
+        event.accept()
+        return True
 
 
 class IndicatorTableItem(QStandardItem):
@@ -102,16 +330,79 @@ class IndicatorTableItem(QStandardItem):
 
 
 class IndicatorTableModel(PyTableModel):
+    """
+    A Indicator table item model specialized for Drag and Drop.
+    """
+    MIME_TYPE = "application/x-Orange-IndicatorTableItemModelData"
+
+    def __init__(self, *args, placeholder=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.placeholder = placeholder
+
     def wrap(self, table):
         super().wrap(table)
 
     def data(self, index, role=Qt.DisplayRole):
         return super().data(index, role)
 
+    def flags(self, index):
+        flags = super().flags(index)
+        if index.isValid():
+            flags |= Qt.ItemIsDragEnabled
+        else:
+            flags |= Qt.ItemIsDropEnabled
+        return flags
+
+    @staticmethod
+    def supportedDropActions():
+        return Qt.MoveAction  # pragma: no cover
+
+    @staticmethod
+    def supportedDragActions():
+        return Qt.MoveAction  # pragma: no cover
+
+    def mimeTypes(self):
+        return [self.MIME_TYPE]
+
+    def mimeData(self, indexlist):
+        """
+        Reimplemented.
+
+        For efficiency reasons only the variable instances are set on the
+        mime data (under `'_items'` property)
+        """
+        items = [self[index.row()] for index in indexlist]
+        mime = QMimeData()
+        mime.setData(self.MIME_TYPE, b'')
+        mime.setProperty("_items", items)
+        return mime
+
+    def dropMimeData(self, mime, action, row, column, parent):
+        """
+        Reimplemented.
+        """
+        if action == Qt.IgnoreAction:
+            return True  # pragma: no cover
+        if not mime.hasFormat(self.MIME_TYPE):
+            return False  # pragma: no cover
+        indicators = mime.property("_items")
+        if indicators is None:
+            return False  # pragma: no cover
+        if row < 0:
+            row = self.rowCount()
+
+        self[row:row] = indicators
+        return True
+
 
 class IndicatorFilterProxyModel(QSortFilterProxyModel):
     def sort(self, column: int, order: Qt.SortOrder = Qt.AscendingOrder):
         super().sort(column, order)
+
+
+class IndicatorTableItem(QStandardItem):
+    def __init__(self, text):
+        super().__init__(text)
 
 
 class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
@@ -159,11 +450,11 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.country_tree.itemChanged.connect(self.country_checked)
         self.set_country_tree(ctree, self.country_tree)
 
-        self.available_indices_model.wrap(self.indicator_features)
+        self.available_indices_model[:] = self.indicator_features
         self.available_indices_model.setHorizontalHeaderLabels(['Source', 'Index', 'Relative', 'Description'])
-        self.available_indices_view.resizeColumnToContents(0)
-        self.available_indices_view.resizeColumnToContents(1)
-        self.available_indices_view.resizeRowsToContents()
+        self.selected_indices_model.setHorizontalHeaderLabels(['Source', 'Index', 'Relative', 'Description'])
+
+        self.update_interface_state(self.available_indices_view)
 
     def _setup_gui(self):
         fbox = gui.widgetBox(self.controlArea, "", orientation=0)
@@ -204,52 +495,45 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
             self.__last_active_view = view
             self.__interface_update_timer.start()
 
-        box = gui.widgetBox(self.mainArea, "Available Indicators")
+        abox = gui.widgetBox(self.mainArea, "Available Indicators")
+        bbox = gui.widgetBox(self.mainArea, "")
+        sbox = gui.widgetBox(self.mainArea, "Selected Indicators")
+
         self.__indicator_filter_line_edit = QLineEdit(
             textChanged=self.__on_indicator_filter_changed,
             placeholderText="Filter ..."
         )
-        box.layout().addWidget(self.__indicator_filter_line_edit)
-
-        self.available_indices_model = IndicatorTableModel()
-        self.available_indices_view = IndicatorTableView()
-        proxy = IndicatorFilterProxyModel()
-        proxy.setFilterKeyColumn(-1)
-        proxy.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        self.available_indices_view.setModel(proxy)
-        self.available_indices_view.setSortingEnabled(True)
-        self.available_indices_view.model().setSourceModel(self.available_indices_model)
 
         def dropcompleted(action):
             if action == Qt.MoveAction:
-                self.commit.deferred()
+                self.commit()
 
+        self.available_indices_model = IndicatorTableModel()
+        self.available_indices_view = IndicatorTableView()
+        self.available_indices_view.setModel(self.available_indices_model)
         self.available_indices_view.selectionModel().selectionChanged.connect(
-            partial(update_on_change, self.available_indices_view)
-        )
+            partial(update_on_change, self.available_indices_view))
         self.available_indices_view.dragDropActionDidComplete.connect(dropcompleted)
-        box.layout().addWidget(self.available_indices_view)
 
-        # ∨
+        abox.layout().addWidget(self.__indicator_filter_line_edit)
+        abox.layout().addWidget(self.available_indices_view)
 
-        box = gui.widgetBox(self.mainArea, margin=0)
-        self.move_indicators_button = gui.button(
-            box, self, "∧",
-            callback=partial(self.move_selected, self.used_indices_view)
-        )
-        box.layout().addWidget(self.move_indicators_button)
-
-        box = gui.widgetBox(self.mainArea, "Selected Indicators")
         self.selected_indices_model = IndicatorTableModel()
         self.selected_indices_view = IndicatorTableView()
-        self.selected_indices_view.model().setSourceModel(self.selected_indicators_model)
+        self.selected_indices_view.setModel(self.selected_indices_model)
         self.selected_indices_model.rowsInserted.connect(self.__selected_indicators_changed)
         self.selected_indices_model.rowsRemoved.connect(self.__selected_indicators_changed)
         self.selected_indices_view.selectionModel().selectionChanged.connect(
-            partial(update_on_change, self.selected_indices_view)
-        )
+            partial(update_on_change, self.selected_indices_view))
         self.selected_indices_view.dragDropActionDidComplete.connect(dropcompleted)
-        box.layout().addWidget(self.selected_indices_view)
+
+        # Create button for move
+        self.move_indicators_button = gui.button(
+            box, self, "∧",
+            callback=partial(self.move_selected, self.selected_indices_view)
+        )
+        bbox.layout().addWidget(self.move_indicators_button)
+        sbox.layout().addWidget(self.selected_indices_view)
 
     def __update_interface_state(self):
         last_view = self.__last_active_view
@@ -257,13 +541,15 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
             self.update_interface_state(last_view)
 
     def update_interface_state(self, focus=None):
-        for view in [self.available_indices_view, self.selected_indicators_view]:
+        for view in [self.available_indices_view, self.selected_indices_view]:
             if view is not focus and not view.hasFocus() \
                     and view.selectionModel().hasSelection():
                 view.selectionModel().clear()
 
         def selected_indices(view):
             model = source_model(view)
+            print(self.selected_rows(view))
+            print([model[i] for i in self.selected_rows(view)])
             return [model[i] for i in self.selected_rows(view)]
 
         available_selected = selected_indices(self.available_indices_view)
@@ -275,6 +561,16 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.move_indicators_button.setEnabled(bool(move_indices_enabled))
         if move_indices_enabled:
             self.move_indicators_button.setText("∨" if available_selected else "∧")
+
+        self.available_indices_view.resizeColumnToContents(0)
+        self.available_indices_view.resizeColumnToContents(1)
+        self.available_indices_view.resizeColumnToContents(2)
+        self.available_indices_view.resizeRowsToContents()
+
+        self.selected_indices_view.resizeColumnToContents(0)
+        self.selected_indices_view.resizeColumnToContents(1)
+        self.selected_indices_view.resizeColumnToContents(2)
+        self.selected_indices_view.resizeRowsToContents()
 
         self.__last_active_view = None
         self.__interface_update_timer.stop()
@@ -435,7 +731,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         view.selectionModel().select(
             selection, QItemSelectionModel.ClearAndSelect)
 
-        self.commit
+        self.commit()
 
     def move_up(self, view: QListView):
         self.move_rows(view, -1)
@@ -455,12 +751,12 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
     def move_from_to(self, src, dst, rows):
         src_model = source_model(src)
         indices = [src_model[r] for r in rows]
+        print(indices)
 
         for s1, s2 in reversed(list(slices(rows))):
-            del src_model[s1:s2]
+            src_model.removeRows(s1, s2-s1)
 
         dst_model = source_model(dst)
-
         dst_model.extend(indices)
 
         self.commit()

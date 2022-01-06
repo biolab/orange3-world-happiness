@@ -64,7 +64,7 @@ def run(
         if state.is_interruption_requested():
             raise Exception
 
-    indicator_codes = [code for (_, code, _) in indicators]
+    indicator_codes = [code for (_, code, _, _) in indicators]
 
     main_df = MONGO_HANDLE.data(countries, indicator_codes, years, callback=callback, index_freq=index_freq)
     results = table_from_frame(main_df)
@@ -73,7 +73,7 @@ def run(
 
     # Add descriptions to indicators
     for attrib in results.domain.attributes:
-        for (_, code, desc) in indicators:
+        for (_, code, _, desc) in indicators:
             if code in attrib.name:
                 attrib.attributes["description"] = desc
 
@@ -86,156 +86,6 @@ class CountryTreeWidgetItem(QTreeWidgetItem):
         self.country_code = code
 
 
-class IndicatorListItemView(QListView):
-    """ A Simple QListView subclass initialized for displaying
-    indicators.
-    """
-    #: Emitted with a Qt.DropAction when a drag/drop (originating from this
-    #: view) completed successfully
-    dragDropActionDidComplete = Signal(int)
-
-    def __init__(self, parent=None, acceptedType=tuple):
-        super().__init__(parent)
-
-        self.setSelectionMode(self.ExtendedSelection)
-        self.setAcceptDrops(True)
-        self.setDragEnabled(True)
-        self.setDropIndicatorShown(True)
-        self.setDragDropMode(self.DragDrop)
-        self.setDefaultDropAction(Qt.MoveAction)
-        self.setDragDropOverwriteMode(False)
-        self.setUniformItemSizes(True)
-        self.viewport().setAcceptDrops(True)
-
-        #: type | Tuple[type]
-        self.__acceptedType = acceptedType
-
-    def startDrag(self, supported_actions):
-        indices = self.selectionModel().selectedIndexes()
-        indices = [i for i in indices if i.flags() & Qt.ItemIsDragEnabled]
-        if indices:
-            data = self.model().mimeData(indices)
-            if not data:
-                return
-
-            drag = QDrag(self)
-            drag.setMimeData(data)
-
-            default_action = Qt.IgnoreAction
-            if self.defaultDropAction() != Qt.IgnoreAction and \
-                    supported_actions & self.defaultDropAction():
-                default_action = self.defaultDropAction()
-            elif (supported_actions & Qt.CopyAction and
-                  self.dragDropMode() != self.InternalMove):
-                default_action = Qt.CopyAction
-            res = drag.exec(supported_actions, default_action)
-            if res == Qt.MoveAction:
-                selected = self.selectionModel().selectedIndexes()
-                rows = list(map(QModelIndex.row, selected))
-                for s1, s2 in reversed(list(slices(rows))):
-                    delslice(self.model(), s1, s2)
-            self.dragDropActionDidComplete.emit(res)
-
-    def dropEvent(self, event):
-        # Bypass QListView.dropEvent on Qt >= 5.15.2.
-        # Because `startDrag` is overridden and does not dispatch to base
-        # implementation then `dropEvent` would need to be overridden also
-        # (private `d->dropEventMoved` state tracking due to QTBUG-87057 fix).
-        QAbstractItemView.dropEvent(self, event)
-
-    def dragEnterEvent(self, event):
-        """
-        Reimplemented from QListView.dragEnterEvent
-        """
-        if self.acceptsDropEvent(event):
-            event.accept()
-        else:
-            event.ignore()
-
-    def acceptsDropEvent(self, event):
-        """
-        Should the drop event be accepted?
-        """
-        # disallow drag/drops between windows
-        if event.source() is not None and \
-                event.source().window() is not self.window():
-            return False
-
-        mime = event.mimeData()
-        vars = mime.property('_items')
-        if vars is None:
-            return False
-
-        if not all(isinstance(var, self.__acceptedType) for var in vars):
-            return False
-
-        event.accept()
-        return True
-
-
-class IndicatorListItemModel(PyListModel):
-    """
-    A Indicator list item model specialized for Drag and Drop.
-    """
-    MIME_TYPE = "application/x-Orange-IndicatorListItemModelData"
-
-    def __init__(self, *args, placeholder=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.placeholder = placeholder
-
-    def data(self, index, role=Qt.DisplayRole):
-        return PyListModel.data(self, index, role)
-
-    def flags(self, index):
-        flags = super().flags(index)
-        if index.isValid():
-            flags |= Qt.ItemIsDragEnabled
-        else:
-            flags |= Qt.ItemIsDropEnabled
-        return flags
-
-    @staticmethod
-    def supportedDropActions():
-        return Qt.MoveAction  # pragma: no cover
-
-    @staticmethod
-    def supportedDragActions():
-        return Qt.MoveAction  # pragma: no cover
-
-    def mimeTypes(self):
-        return [self.MIME_TYPE]
-
-    def mimeData(self, indexlist):
-        """
-        Reimplemented.
-
-        For efficiency reasons only the variable instances are set on the
-        mime data (under `'_items'` property)
-        """
-        items = [self[index.row()] for index in indexlist]
-        mime = QMimeData()
-        mime.setData(self.MIME_TYPE, b'')
-        mime.setProperty("_items", items)
-        return mime
-
-    def dropMimeData(self, mime, action, row, column, parent):
-        """
-        Reimplemented.
-        """
-        if action == Qt.IgnoreAction:
-            return True  # pragma: no cover
-        if not mime.hasFormat(self.MIME_TYPE):
-            return False  # pragma: no cover
-        indicators = mime.property("_items")
-        if indicators is None:
-            return False  # pragma: no cover
-        if row < 0:
-            row = self.rowCount()
-
-        self[row:row] = indicators
-        return True
-
-
 class IndicatorTableView(QTableView):
     """ A Simple QTableView subclass initialized for displaying
     indicators.
@@ -243,14 +93,12 @@ class IndicatorTableView(QTableView):
     dragDropActionDidComplete = Signal(int)
 
     def __init__(self, parent=None):
-        super().__init__(
-            parent,
-            sortingEnabled=True,
-            editTriggers=QTableView.NoEditTriggers,
-            selectionBehavior=QTableView.SelectRows,
-            selectionMode=QTableView.ExtendedSelection,
-            cornerButtonEnabled=False,
-        )
+        super().__init__()
+
+        self.setParent(parent)
+        self.setSortingEnabled(True)
+        self.setSelectionBehavior(QTableView.SelectRows)
+
         self.setSelectionMode(self.ExtendedSelection)
         self.setAcceptDrops(True)
         self.setDragEnabled(True)
@@ -264,64 +112,6 @@ class IndicatorTableView(QTableView):
         self.horizontalHeader().setStretchLastSection(True)
         self.verticalHeader().setDefaultSectionSize(22)
         self.verticalHeader().hide()
-
-    def startDrag(self, supported_actions):
-        indices = self.selectionModel().selectedIndexes()
-        indices = [i for i in indices if i.flags() & Qt.ItemIsDragEnabled]
-
-        if indices:
-            data = self.model().mimeData(indices)
-            if not data:
-                return
-
-            drag = QDrag(self)
-            drag.setMimeData(data)
-            if self.defaultDropAction() != Qt.IgnoreAction and \
-                    supported_actions & self.defaultDropAction():
-                default_action = self.defaultDropAction()
-            elif (supported_actions & Qt.CopyAction and
-                  self.dragDropMode() != self.InternalMove):
-                default_action = Qt.CopyAction
-            res = drag.exec(supported_actions, default_action)
-            if res == Qt.MoveAction:
-                selected = self.selectionModel().selectedIndexes()
-                rows = list(map(QModelIndex.row, selected))
-                for s1, s2 in reversed(list(slices(rows))):
-                    delslice(self.model(), s1, s2)
-            self.dragDropActionDidComplete.emit(res)
-
-    def dropEvent(self, event):
-        # Bypass QListView.dropEvent on Qt >= 5.15.2.
-        # Because `startDrag` is overridden and does not dispatch to base
-        # implementation then `dropEvent` would need to be overridden also
-        # (private `d->dropEventMoved` state tracking due to QTBUG-87057 fix).
-        QAbstractItemView.dropEvent(self, event)
-
-    def dragEnterEvent(self, event):
-        """
-        Reimplemented from QListView.dragEnterEvent
-        """
-        if self.acceptsDropEvent(event):
-            event.accept()
-        else:
-            event.ignore()
-
-    def acceptsDropEvent(self, event):
-        """
-        Should the drop event be accepted?
-        """
-        # disallow drag/drops between windows
-        if event.source() is not None and \
-                event.source().window() is not self.window():
-            return False
-
-        mime = event.mimeData()
-        vars = mime.property('_items')
-        if vars is None:
-            return False
-
-        event.accept()
-        return True
 
 
 class IndicatorTableItem(QStandardItem):
@@ -400,11 +190,6 @@ class IndicatorFilterProxyModel(QSortFilterProxyModel):
         super().sort(column, order)
 
 
-class IndicatorTableItem(QStandardItem):
-    def __init__(self, text):
-        super().__init__(text)
-
-
 class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
     name = "Socioeconomic Indices"
     description = "Gets requested socioeconomic data from WDB/WHR."
@@ -416,7 +201,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
     indicator_freq: float = Setting(60)
     selected_years: List = Setting([])
     selected_indicators: List = Setting([])
-    selected_countries: Set = Setting(set())
+    selected_countries: Set = Setting(set(), schema_only=True)
     auto_apply: bool = Setting(False)
 
     class Outputs:
@@ -451,10 +236,14 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.set_country_tree(ctree, self.country_tree)
 
         self.available_indices_model[:] = self.indicator_features
+        self.selected_indices_model[:] = self.selected_indicators
         self.available_indices_model.setHorizontalHeaderLabels(['Source', 'Index', 'Relative', 'Description'])
         self.selected_indices_model.setHorizontalHeaderLabels(['Source', 'Index', 'Relative', 'Description'])
 
         self.update_interface_state(self.available_indices_view)
+        self.update_interface_state(self.selected_indices_view)
+
+        self.resize(600, 600)
 
     def _setup_gui(self):
         fbox = gui.widgetBox(self.controlArea, "", orientation=0)
@@ -469,7 +258,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         grid.addRow("Index frequency (%)", spin)
 
         vbox = gui.vBox(box)
-        gui.listBox(
+        years_view = gui.listBox(
             vbox, self, 'selected_years', labels='year_features',
             selectionMode=QListView.ExtendedSelection, box='Years'
         )
@@ -510,7 +299,11 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
 
         self.available_indices_model = IndicatorTableModel()
         self.available_indices_view = IndicatorTableView()
-        self.available_indices_view.setModel(self.available_indices_model)
+        proxy = IndicatorFilterProxyModel()
+        proxy.setFilterKeyColumn(-1)
+        proxy.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.available_indices_view.setModel(proxy)
+        self.available_indices_view.model().setSourceModel(self.available_indices_model)
         self.available_indices_view.selectionModel().selectionChanged.connect(
             partial(update_on_change, self.available_indices_view))
         self.available_indices_view.dragDropActionDidComplete.connect(dropcompleted)
@@ -530,6 +323,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         # Create button for move
         self.move_indicators_button = gui.button(
             box, self, "∧",
+            width=30,
             callback=partial(self.move_selected, self.selected_indices_view)
         )
         bbox.layout().addWidget(self.move_indicators_button)
@@ -548,8 +342,6 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
 
         def selected_indices(view):
             model = source_model(view)
-            print(self.selected_rows(view))
-            print([model[i] for i in self.selected_rows(view)])
             return [model[i] for i in self.selected_rows(view)]
 
         available_selected = selected_indices(self.available_indices_view)
@@ -565,37 +357,21 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.available_indices_view.resizeColumnToContents(0)
         self.available_indices_view.resizeColumnToContents(1)
         self.available_indices_view.resizeColumnToContents(2)
-        self.available_indices_view.resizeRowsToContents()
 
         self.selected_indices_view.resizeColumnToContents(0)
         self.selected_indices_view.resizeColumnToContents(1)
         self.selected_indices_view.resizeColumnToContents(2)
-        self.selected_indices_view.resizeRowsToContents()
+
 
         self.__last_active_view = None
         self.__interface_update_timer.stop()
 
     def __on_indicator_filter_changed(self):
-        model = self.indicator_view.model()
+        model = self.available_indices_view.model()
         model.setFilterFixedString(self.__indicator_filter_line_edit.text().strip())
         self._select_indicator_rows()
 
     def __selected_indicators_changed(self):
-        indicators = self.selected_indicators
-        available, selected = self.available_indices_model[:], self.selected_indices_model[:]
-        self.available_indices_model[:] = [attr for attr in selected + available
-                                           if attr not in indicators]
-        self.selected_indices_model[:] = indicators
-        self.commit()
-
-    def __on_indicator_selection_changed(self):
-        selected_rows = self.available_indices_view.selectionModel().selectedRows(1)
-        model = self.available_indices_view.model()
-        self.selected_indicators = [
-            (model.data(model.index(i.row(), 0)),
-             model.data(model.index(i.row(), 1)),
-             model.data(model.index(i.row(), 3)))
-            for i in selected_rows]
         self.commit()
 
     def __on_indicator_horizontal_header_clicked(self):
@@ -614,6 +390,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         years = []
         for i in self.selected_years:
             years.append(int(self.year_features[i]))
+        self.selected_indicators = self.selected_indices_model.tolist()
         self.start(
             run, list(self.selected_countries), self.selected_indicators,
             years, self.agg_method, self.indicator_freq
@@ -683,21 +460,20 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
                 self.set_country_tree(data[key], node)
 
     def _select_indicator_rows(self):
-        model = self.indicator_view.model()
+        model = source_model(self.available_indices_view)
+        available_selected = [model[r] for r in self.selected_rows(self.available_indices_view)]
         n_rows, n_columns = model.rowCount(), model.columnCount()
         selection = QItemSelection()
         for i in range(n_rows):
             indicator = model.data(model.index(i, 1))
-            if indicator in self.selected_indicators:
+            if indicator in available_selected:
                 _selection = QItemSelection(model.index(i, 0),
                                             model.index(i, n_columns - 1))
                 selection.merge(_selection, QItemSelectionModel.Select)
 
-        self.indicator_view.selectionModel().select(
+        self.available_indices_view.selectionModel().select(
             selection, QItemSelectionModel.ClearAndSelect
         )
-
-    ### DRAG AND DROP FUNCTIONS
 
     @staticmethod
     def selected_rows(view):
@@ -750,14 +526,17 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
 
     def move_from_to(self, src, dst, rows):
         src_model = source_model(src)
-        indices = [src_model[r] for r in rows]
-        print(indices)
+        attrs = [src_model[r] for r in rows]
 
         for s1, s2 in reversed(list(slices(rows))):
-            src_model.removeRows(s1, s2-s1)
+            del src_model[s1:s2]
 
         dst_model = source_model(dst)
-        dst_model.extend(indices)
+
+        if dst_model.rowCount() == 0:
+            dst_model.wrap(attrs)
+        else:
+            dst_model.extend(attrs)
 
         self.commit()
 

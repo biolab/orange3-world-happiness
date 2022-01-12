@@ -19,6 +19,7 @@ from Orange.widgets.utils.listfilter import (
 from Orange.widgets.widget import OWWidget, Output
 from Orange.widgets.data.owselectcolumns import VariablesListItemModel
 from Orange.widgets import gui
+from PyQt5.QtCore import QAbstractItemModel
 
 from orangecontrib.owwhstudy.whstudy import WorldIndicators, AggregationMethods
 
@@ -186,8 +187,20 @@ class IndicatorTableModel(PyTableModel):
 
 
 class IndicatorFilterProxyModel(QSortFilterProxyModel):
+    def __init__(self):
+        super(IndicatorFilterProxyModel, self).__init__()
+        self.rel_only = False
+
+    def setRelOnly(self, x):
+        self.rel_only = x
+        self.invalidateFilter()
+
     def filterAcceptsRow(self, source_row, source_parent):
-        return True
+        show = QSortFilterProxyModel.filterAcceptsRow(self, source_row, source_parent)
+        if self.rel_only:
+            return show and (self.sourceModel()[source_row][2])
+        else:
+            return show
 
     def sort(self, column: int, order: Qt.SortOrder = Qt.AscendingOrder):
         super().sort(column, order)
@@ -396,6 +409,8 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self._select_indicator_rows()
 
     def __on_indicator_relative_changed(self):
+        model = self.available_indices_view.model()
+        model.setRelOnly(self.__indicator_relative_checkbox.isChecked())
         self._select_indicator_rows()
 
     def __selected_indicators_changed(self):

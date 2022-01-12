@@ -3,8 +3,8 @@ from functools import partial
 
 from AnyQt.QtCore import Qt, Signal, QSortFilterProxyModel, QItemSelection, QItemSelectionModel, \
     QTimer, QModelIndex, QMimeData
-from AnyQt.QtWidgets import QLabel, QGridLayout, QFormLayout, QLineEdit, \
-    QTableView, QListView, QTreeWidget, QTreeWidgetItem, QAbstractItemView
+from AnyQt.QtWidgets import QLabel, QVBoxLayout, QFormLayout, QLineEdit, \
+    QTableView, QListView, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QCheckBox
 from AnyQt.QtGui import QStandardItem, QDrag
 
 from Orange.data import Table
@@ -186,6 +186,9 @@ class IndicatorTableModel(PyTableModel):
 
 
 class IndicatorFilterProxyModel(QSortFilterProxyModel):
+    def filterAcceptsRow(self, source_row, source_parent):
+        return True
+
     def sort(self, column: int, order: Qt.SortOrder = Qt.AscendingOrder):
         super().sort(column, order)
 
@@ -235,11 +238,10 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.country_tree.itemChanged.connect(self.country_checked)
         self.set_country_tree(ctree, self.country_tree)
 
-        self.available_indices_model[:] = self.indicator_features
-        self.selected_indices_model[:] = self.selected_indicators
         self.available_indices_model.setHorizontalHeaderLabels(['Source', 'Index', 'Relative', 'Description'])
         self.selected_indices_model.setHorizontalHeaderLabels(['Source', 'Index', 'Relative', 'Description'])
 
+        self.initial_indices_update()
         self.update_interface_state(self.available_indices_view)
         self.update_interface_state(self.selected_indices_view)
 
@@ -293,6 +295,17 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
             placeholderText="Filter ..."
         )
 
+        self.__indicator_relative_checkbox = QCheckBox("Relative Only", self,)
+        self.__indicator_relative_checkbox.setChecked(False)
+        self.__indicator_relative_checkbox.stateChanged.connect(
+            self.__on_indicator_relative_changed
+        )
+
+        hBox = gui.hBox(abox)
+        hBox.layout().addWidget(self.__indicator_filter_line_edit)
+        hBox.layout().addWidget(self.__indicator_relative_checkbox)
+        abox.layout().addWidget(hBox)
+
         def dropcompleted(action):
             if action == Qt.MoveAction:
                 self.commit()
@@ -307,8 +320,6 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.available_indices_view.selectionModel().selectionChanged.connect(
             partial(update_on_change, self.available_indices_view))
         self.available_indices_view.dragDropActionDidComplete.connect(dropcompleted)
-
-        abox.layout().addWidget(self.__indicator_filter_line_edit)
         abox.layout().addWidget(self.available_indices_view)
 
         self.selected_indices_model = IndicatorTableModel()
@@ -326,7 +337,10 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
             width=30,
             callback=partial(self.move_selected, self.selected_indices_view)
         )
-        bbox.layout().addWidget(self.move_indicators_button)
+        vLayout = QVBoxLayout()
+        vLayout.setAlignment(Qt.AlignHCenter)
+        vLayout.addWidget(self.move_indicators_button)
+        bbox.layout().addLayout(vLayout)
         sbox.layout().addWidget(self.selected_indices_view)
 
     def __update_interface_state(self):
@@ -362,13 +376,26 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.selected_indices_view.resizeColumnToContents(1)
         self.selected_indices_view.resizeColumnToContents(2)
 
+        self.available_indices_view.setColumnHidden(2, True)
+        self.selected_indices_view.setColumnHidden(2, True)
+
 
         self.__last_active_view = None
         self.__interface_update_timer.stop()
 
+    def initial_indices_update(self):
+        used = self.selected_indicators
+        self.available_indices_model[:] = [index for index in self.indicator_features
+                                           if index not in used]
+        self.selected_indices_model[:] = self.selected_indicators
+        self.commit()
+
     def __on_indicator_filter_changed(self):
         model = self.available_indices_view.model()
         model.setFilterFixedString(self.__indicator_filter_line_edit.text().strip())
+        self._select_indicator_rows()
+
+    def __on_indicator_relative_changed(self):
         self._select_indicator_rows()
 
     def __selected_indicators_changed(self):

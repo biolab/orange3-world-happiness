@@ -64,7 +64,6 @@ class AggregationMethods:
                     for year in years:
                         name = f"{year}-{indicator}"
                         if ContinuousVariable(name) in world_data.domain.attributes and not np.isnan(row[name]):
-                            print(row[name].value)
                             values.append(row[name])
                     df.at[row['Country code'], indicator] = agg_functions[agg_method](values) if values else np.nan
             return table_from_frame(df)

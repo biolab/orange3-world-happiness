@@ -1,4 +1,4 @@
-Country,Happiness Score,GDP per capita,Social support,Healthy life expectancy,Freedom to make life choices,Generosity,Perceptions of corruption
+Country,HAP.SCORE,EXP.GDP.PER.CAPITA,EXP.SOC.SUPP,EXP.HEAL.LIFE,EXP.FREE.LIFE,EXP.GEN,EXP.TRUST
 Finland,7.769,1.340,1.587,0.986,0.596,0.153,0.393
 Denmark,7.600,1.383,1.573,0.996,0.592,0.252,0.410
 Norway,7.554,1.488,1.582,1.028,0.603,0.271,0.341

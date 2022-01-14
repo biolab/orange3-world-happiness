@@ -1,4 +1,4 @@
-Country,Happiness Score,GDP per capita,Social support,Healthy life expectancy,Freedom to make life choices,Perceptions of corruption,Generosity
+Country,HAP.SCORE,EXP.GDP.PER.CAPITA,EXP.SOC.SUPP,EXP.HEAL.LIFE,EXP.FREE.LIFE,EXP.TRUST,EXP.GEN
 Denmark,7.526,1.44178,1.16374,0.79504,0.57941,0.44453,0.36171
 Switzerland,7.509,1.52733,1.14524,0.86303,0.58557,0.41203,0.28083
 Iceland,7.501,1.42666,1.18326,0.86733,0.56624,0.14975,0.47678

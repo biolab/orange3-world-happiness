@@ -224,7 +224,7 @@ class WorldIndicators:
                         # Must change indicator code to underscores because of Mongo naming restrictions
                         indic_code = str.replace(indic_code, '.', '_')
 
-                        if hasattr(doc['indicators'], indic_code):
+                        if indic_code in doc['indicators']:
                             indic = doc['indicators'][indic_code]
                         else:
                             doc['indicators'][indic_code] = {}
@@ -239,14 +239,16 @@ class WorldIndicators:
                 print("Data replaced with id", result)
 
         elif db == 'WHR':
-
             for year in years:
-                df = pd.read_csv(f'../data/{year}.csv')
+                df = pd.read_csv(f'../data/whr/{year}.csv')
                 df = df.set_index('Country')
 
                 for country_code in countries:
                     doc = self.db.countries.find_one({"_id": country_code})
-                    country_key = find_country_name(country_code)
+                    country_key = doc['name'] if doc else find_country_name(country_code)
+
+                    print(f"[{datetime.datetime.now()}] Updating WHR{year} indicators for " +
+                          f"{country_key}")
 
                     if doc is None:
                         doc = {
@@ -256,25 +258,34 @@ class WorldIndicators:
                         }
 
                     if country_key in df.index:
-                        country_df = df[df.index == country_key]
-
-                        for indicator_code in indicators:
-                            indic_key = str.replace(indicator_code, '.', '_')
+                        for indic_key in indicators:
+                            indicator_code = str.replace(indic_key, '.', '_')
 
                             if indic_key in df.columns:
-                                if hasattr(doc['indicators'], indicator_code):
+                                if indicator_code in doc['indicators']:
                                     indic = doc['indicators'][indicator_code]
                                 else:
                                     doc['indicators'][indicator_code] = {}
                                     indic = doc['indicators'][indicator_code]
 
-                                val = country_df.at[indic_key]
-                                indic.update({str(year): val})
+                                val = df.at[country_key, indic_key]
+                                val = float(val.replace(',', '.')) if isinstance(val, str) else val
+                                indic.update({str(year): float(val)})
                             else:
                                 print(f"Skipping {indic_key} because missing in file.")
 
                         # Update document in remote mongo database
-                        result = self.db.countries.replace_one({"_id": country_code}, doc)
-                        print("Data replaced with id", result)
+                        self.db.countries.replace_one({"_id": country_code}, doc)
+                    else:
+                        f"Skipping {country_key} beacuse missing in file."
 
 
+if __name__ == "__main__":
+    handle = WorldIndicators("main", "biolab")
+    indicators = [code for (db, code, _, _) in handle.indicators() if db == 'WHR']
+    countries = [code for (code, _) in handle.countries()]
+    years = [2021, 2020, 2019, 2018, 2017, 2016, 2015]
+
+    print(countries)
+    print(years)
+    handle.update(countries, indicators, years, db='WHR')

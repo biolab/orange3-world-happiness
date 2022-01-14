@@ -1,4 +1,4 @@
-Country,Happiness Score,GDP per capita,Social support,Healthy life expectancy,Freedom to make life choices,Generosity,Perceptions of corruption
+Country,HAP.SCORE,EXP.GDP.PER.CAPITA,EXP.SOC.SUPP,EXP.HEAL.LIFE,EXP.FREE.LIFE,EXP.GEN,EXP.TRUST
 Afghanistan,2.523,0.370,0.000,0.126,0.000,0.122,0.010
 Albania,5.117,1.008,0.529,0.646,0.491,0.168,0.024
 Algeria,4.887,0.946,0.765,0.552,0.119,0.144,0.120

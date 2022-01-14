@@ -1,8 +1,9 @@
 from typing import Any, List, Set
 from functools import partial
+from re import match
 
 from AnyQt.QtCore import Qt, Signal, QSortFilterProxyModel, QItemSelection, QItemSelectionModel, \
-    QTimer, QModelIndex, QMimeData
+    QTimer, QModelIndex, QMimeData, QRegExp
 from AnyQt.QtWidgets import QLabel, QVBoxLayout, QFormLayout, QLineEdit, \
     QTableView, QListView, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QCheckBox
 from AnyQt.QtGui import QStandardItem, QDrag
@@ -17,7 +18,6 @@ from Orange.widgets.utils.listfilter import (
     VariablesListItemView, slices, variables_filter, delslice
 )
 from Orange.widgets.widget import OWWidget, Output
-from Orange.widgets.data.owselectcolumns import VariablesListItemModel
 from Orange.widgets import gui
 from PyQt5.QtCore import QAbstractItemModel
 
@@ -190,17 +190,37 @@ class IndicatorFilterProxyModel(QSortFilterProxyModel):
     def __init__(self):
         super(IndicatorFilterProxyModel, self).__init__()
         self.rel_only = False
+        self.and_filter = False
+        self._filter_string = ""
 
-    def setRelOnly(self, x):
+    def set_filter_string(self, filter):
+        self._filter_string = str(filter).lower()
+        self.invalidateFilter()
+
+    def set_rel(self, x):
         self.rel_only = x
         self.invalidateFilter()
 
-    def filterAcceptsRow(self, source_row, source_parent):
-        show = QSortFilterProxyModel.filterAcceptsRow(self, source_row, source_parent)
-        if self.rel_only:
-            return show and (self.sourceModel()[source_row][2])
+    def set_and_filter(self):
+        self.and_filter = not self.and_filter
+        self.invalidateFilter()
+
+    def filter_accepts_row(self, row):
+        row_str = f"{row[0]} {row[1]} {row[3]}"
+        row_str = row_str.lower()
+        filters = self._filter_string.split()
+
+        if self.and_filter:
+            return all(f in row_str for f in filters)
         else:
-            return show
+            for f in filters:
+                if f in row_str:
+                    return True
+        return not filters
+
+    def filterAcceptsRow(self, source_row, source_parent):
+        row = self.sourceModel()[source_row]
+        return self.filter_accepts_row(row) and (not self.rel_only or (self.rel_only and row[2]))
 
     def sort(self, column: int, order: Qt.SortOrder = Qt.AscendingOrder):
         super().sort(column, order)
@@ -303,19 +323,22 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         bbox = gui.widgetBox(self.mainArea, "")
         sbox = gui.widgetBox(self.mainArea, "Selected Indicators")
 
-        self.__indicator_filter_line_edit = QLineEdit(
-            textChanged=self.__on_indicator_filter_changed,
-            placeholderText="Filter ..."
-        )
+        self.__indicator_filter_line_edit = QLineEdit(placeholderText="Filter ...")
 
-        self.__indicator_relative_checkbox = QCheckBox("Relative Only", self,)
+        self.__indicator_relative_checkbox = QCheckBox("Relative Only", self)
+        self.__indicator_relative_checkbox.setToolTip("Toggle filtering only relative indicators.")
         self.__indicator_relative_checkbox.setChecked(False)
         self.__indicator_relative_checkbox.stateChanged.connect(
             self.__on_indicator_relative_changed
         )
 
+        self.__indicator_and_button = gui.button(box, self, "ANY", width=40,
+                                                 callback=self.__on_indicator_filter_changed)
+        self.__indicator_and_button.setToolTip("Toggle filtering indicators that include all words.")
+
         hBox = gui.hBox(abox)
         hBox.layout().addWidget(self.__indicator_filter_line_edit)
+        hBox.layout().addWidget(self.__indicator_and_button)
         hBox.layout().addWidget(self.__indicator_relative_checkbox)
         abox.layout().addWidget(hBox)
 
@@ -328,6 +351,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         proxy = IndicatorFilterProxyModel()
         proxy.setFilterKeyColumn(-1)
         proxy.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.__indicator_filter_line_edit.textChanged.connect(proxy.set_filter_string)
         self.available_indices_view.setModel(proxy)
         self.available_indices_view.model().setSourceModel(self.available_indices_model)
         self.available_indices_view.selectionModel().selectionChanged.connect(
@@ -392,7 +416,6 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.available_indices_view.setColumnHidden(2, True)
         self.selected_indices_view.setColumnHidden(2, True)
 
-
         self.__last_active_view = None
         self.__interface_update_timer.stop()
 
@@ -405,12 +428,13 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
 
     def __on_indicator_filter_changed(self):
         model = self.available_indices_view.model()
-        model.setFilterFixedString(self.__indicator_filter_line_edit.text().strip())
+        model.set_and_filter()
+        self.__indicator_and_button.setText("ALL" if model.and_filter else "ANY")
         self._select_indicator_rows()
 
     def __on_indicator_relative_changed(self):
         model = self.available_indices_view.model()
-        model.setRelOnly(self.__indicator_relative_checkbox.isChecked())
+        model.set_rel(self.__indicator_relative_checkbox.isChecked())
         self._select_indicator_rows()
 
     def __selected_indicators_changed(self):

@@ -9,6 +9,7 @@ from pprint import pprint
 import wbgapi as wb
 import pandas as pd
 from pymongo import MongoClient, ReplaceOne
+from Orange.util import dummy_callback
 import datetime
 
 MONGODB_HOST = 'cluster0.vxftj.mongodb.net'
@@ -30,20 +31,8 @@ def find_indicator_desc(code, db):
             raise ValueError(f"Invalid indicator code {code}.")
 
         return indicator[0]['value']
-    elif db == 'WHR':
-        for item in whr_indicators:
-            if item[0] == code:
-                return item[1]
-
-
-whr_indicators = [('HAP.SCORE', 'Ladder score'),
-                  ('LOG.GDP.PER.CAP', 'Logged GDP per capita'),
-                  ('SOC.SUP', 'Social support'),
-                  ('HEA.LIF.EXP', 'Healthy life expectancy'),
-                  ('FRE.LIF.CHO', 'Freedom to make life choices'),
-                  ('GEN.SCORE', 'Generosity'),
-                  ('PER.OF.COR', 'Perceptions of corruption')
-                  ]
+    else:
+        return ""
 
 
 class WorldIndicators:
@@ -76,29 +65,30 @@ class WorldIndicators:
         :return: list of years with data
         """
 
-        # TODO Think of a more sensible implementation
         cursor = self.db.countries.find({}, {"indicators": 1})
-        years = []
+        years = set()
         for doc in cursor:
             for _, val in doc['indicators'].items():
                 for key in val.keys():
-                    if key not in years:
-                        years.append(key)
-        return years
+                    years.add(key)
+        return list(years)
 
     def indicators(self):
         """ Function gets data from local database.
-        Indicator is of form (id, desc, db, home) possibly with url explanation.
+        Indicator is of form (db, code, is_relative, desc) possibly with url explanation.
         :return: list of indicators
         """
         cursor = self.db.indicators.find({})
         out = []
         for doc in cursor:
-            out.append((doc['_id'], doc['desc'], doc['db'], doc['url']))
+            out.append((doc['db'], str.replace(doc['_id'], '_', '.'), doc['is_relative'], doc['desc']))
         return out
 
-    def data(self, countries, indicators, year, skip_empty_columns=True, skip_empty_rows=True, include_country_names=False):
+    def data(self, countries, indicators, year, skip_empty_columns=True,
+             skip_empty_rows=True, include_country_names=True, callback=dummy_callback, index_freq=0):
         """ Function gets data from local database.
+        :param index_freq: percentage of not NaN values to keep indicator
+        :param callback: callback function
         :param include_country_names: add collumn with country names
         :param skip_empty_rows: skip all NaN columns
         :param skip_empty_columns: skip all NaN rows
@@ -121,24 +111,38 @@ class WorldIndicators:
                 for y in year:
                     cols.append(f"{y}-{i}")
         else:
-            cols.extend(indicators)
+            for i in indicators:
+                cols.append(i)
 
         # Create appropriate pandas Dataframe
         df = pd.DataFrame(data=None, index=countries, columns=cols, dtype=float)
+        df.index.name = "Country code"
 
-        # Convert country row to string
+        # Add country name column
         if include_country_names:
             df = df.astype({"Country name": str})
 
+        steps = len(countries)
+        step = 1
+
+        callback(0, "Fetching data ...")
+
+        query_filter = {'_id': 1, 'name': 1}
+        for i in indicators:
+            code = str.replace(i, '.', '_')
+            query_filter[f'indicators.{code}'] = 1
 
         # Fill Dataframe from local database
         collection = self.db.countries
-        for doc in collection.find({"_id": {"$in": countries}}):
+        for country in countries:
+            doc = collection.find_one({"_id": country}, query_filter)
             if include_country_names:
                 df.at[doc['_id'], "Country name"] = doc['name']
             for i in indicators:
-                if i in doc['indicators']:
-                    values = doc['indicators'][i]
+                # Must change indicator code to underscores because of Mongo naming restrictions
+                code = str.replace(i, '.', '_')
+                if code in doc['indicators']:
+                    values = doc['indicators'][code]
                     if len(year) > 1:
                         for y in year:
                             if str(y) in values:
@@ -146,12 +150,18 @@ class WorldIndicators:
                     else:
                         if str(year[0]) in values:
                             df.at[doc['_id'], i] = values[str(year[0])]
+            callback(step / steps)
+            step += 1
+
         if skip_empty_rows:
-            df = df.dropna(axis=0, how='all')
+            subset = df.columns.difference(["Country name"]) if include_country_names else df
+            df = df.dropna(subset=subset, axis=0, how='all')
 
         if skip_empty_columns:
             df = df.dropna(axis=1, how='all')
 
+        min_count = len(df) * index_freq*0.01
+        df = df.dropna(thresh=min_count, axis=1)
         return df
 
     def update(self, countries, indicators, years, db):
@@ -172,12 +182,15 @@ class WorldIndicators:
 
         # Create indicator documents if they don't exist
         for code in indicators:
-            if len(list(self.db.indicators.find({"_id": code}).limit(1))) == 0:
+            indic_code = str.replace(code, ".", "_")
+            if db == 'WDI' and len(list(self.db.indicators.find({"_id": indic_code}).limit(1))) == 0:
+                desc = find_indicator_desc(code, db)
                 doc = {
-                    "_id": code,
-                    "desc": find_indicator_desc(code, db),
+                    "_id": indic_code,
+                    "desc": desc,
+                    "is_relative": '%' in desc,
                     "db": db,
-                    "url": None
+                    "url": f"https://data.worldbank.org/indicator/{code}" if db == 'WDI' else None
                 }
                 self.db.indicators.insert_one(doc)
 
@@ -208,6 +221,9 @@ class WorldIndicators:
                         if len(indicators) > 1:
                             indic_code = row['series']
 
+                        # Must change indicator code to underscores because of Mongo naming restrictions
+                        indic_code = str.replace(indic_code, '.', '_')
+
                         if hasattr(doc['indicators'], indic_code):
                             indic = doc['indicators'][indic_code]
                         else:
@@ -223,44 +239,42 @@ class WorldIndicators:
                 print("Data replaced with id", result)
 
         elif db == 'WHR':
-            df = pd.read_csv(f'../data/WHR2021_data_panel.csv')
-            df = df.set_index('Country name')
 
-            for country_code in countries:
-                doc = self.db.countries.find_one({"_id": country_code})
+            for year in years:
+                df = pd.read_csv(f'../data/{year}.csv')
+                df = df.set_index('Country')
 
-                if doc is None:
-                    doc = {
-                        "_id": country_code,
-                        "name": find_country_name(country_code),
-                        "indicators": {}
-                    }
+                for country_code in countries:
+                    doc = self.db.countries.find_one({"_id": country_code})
+                    country_key = find_country_name(country_code)
 
-                country_key = find_country_name(country_code)
-                country_df = df[df.index == country_key]
-                country_df = country_df.set_index('year')
+                    if doc is None:
+                        doc = {
+                            "_id": country_code,
+                            "name": country_key,
+                            "indicators": {}
+                        }
 
-                for indicator_code in indicators:
-                    indic_key = find_indicator_desc(indicator_code, db)
+                    if country_key in df.index:
+                        country_df = df[df.index == country_key]
 
-                    if indic_key in df.columns:
-                        if hasattr(doc['indicators'], indicator_code):
-                            indic = doc['indicators'][indicator_code]
-                        else:
-                            doc['indicators'][indicator_code] = {}
-                            indic = doc['indicators'][indicator_code]
+                        for indicator_code in indicators:
+                            indic_key = str.replace(indicator_code, '.', '_')
 
-                        for y in years:
-                            if y not in country_df.index:
-                                print(f'Year {y} for {country_key} of {indic_key} is missing.')
+                            if indic_key in df.columns:
+                                if hasattr(doc['indicators'], indicator_code):
+                                    indic = doc['indicators'][indicator_code]
+                                else:
+                                    doc['indicators'][indicator_code] = {}
+                                    indic = doc['indicators'][indicator_code]
+
+                                val = country_df.at[indic_key]
+                                indic.update({str(year): val})
                             else:
-                                val = country_df.at[y, indic_key]
-                                indic.update({str(y): val})
-                    else:
-                        print(f"Skipping {indic_key} because missing in file.")
+                                print(f"Skipping {indic_key} because missing in file.")
 
-                # Update document in remote mongo database
-                result = self.db.countries.replace_one({"_id": country_code}, doc)
-                print("Data replaced with id", result)
+                        # Update document in remote mongo database
+                        result = self.db.countries.replace_one({"_id": country_code}, doc)
+                        print("Data replaced with id", result)
 
 

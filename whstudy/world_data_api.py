@@ -279,6 +279,8 @@ class WorldIndicators:
                     else:
                         f"Skipping {country_key} beacuse missing in file."
 
+        elif db == 'OECD':
+            url = 'http://stats.oecd.org/SDMX-JSON/data/<dataset identifier>/<filter expression>/<agency name>[ ?<additional parameters>]'
 
 if __name__ == "__main__":
     handle = WorldIndicators("main", "biolab")

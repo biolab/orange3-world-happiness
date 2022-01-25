@@ -13,6 +13,9 @@
 # File-based project format
 *.iws
 
+# Python specific stuff
+Orange3_Example_Add_on.egg-info/
+
 # IntelliJ
 out/
 

@@ -34,6 +34,7 @@ def find_indicator_desc(code, db):
     else:
         return ""
 
+
 class WorldIndicators:
 
     def __init__(self, user, password):
@@ -83,14 +84,13 @@ class WorldIndicators:
             out.append((doc['db'], str.replace(doc['_id'], '_', '.'), doc['is_relative'], doc['desc']))
         return out
 
-    def data(self, countries, indicators, year, skip_empty_columns=True,
-             skip_empty_rows=True, include_country_names=True, callback=dummy_callback, index_freq=0):
+    def data(self, countries, indicators, year,
+             include_country_names=True, callback=dummy_callback, index_freq=0, country_freq=0):
         """ Function gets data from local database.
+        :param country_freq: percentage of not NaN values to keep country
         :param index_freq: percentage of not NaN values to keep indicator
         :param callback: callback function
         :param include_country_names: add collumn with country names
-        :param skip_empty_rows: skip all NaN columns
-        :param skip_empty_columns: skip all NaN rows
         :param countries: list of country codes
         :type countries: list
         :param indicators: list of indicator codes
@@ -152,15 +152,12 @@ class WorldIndicators:
             callback(step / steps)
             step += 1
 
-        if skip_empty_rows:
-            subset = df.columns.difference(["Country name"]) if include_country_names else df
-            df = df.dropna(subset=subset, axis=0, how='all')
-
-        if skip_empty_columns:
-            df = df.dropna(axis=1, how='all')
-
-        min_count = len(df) * index_freq*0.01
+        min_count = len(df) * index_freq * 0.01
         df = df.dropna(thresh=min_count, axis=1)
+
+        min_count = len(df.columns) * country_freq * 0.01
+        df = df.dropna(thresh=min_count, axis=0)
+
         return df
 
     def update(self, countries, indicators, years, db):
@@ -182,7 +179,7 @@ class WorldIndicators:
         # Create indicator documents if they don't exist
         for code in indicators:
             indic_code = str.replace(code, ".", "_")
-            if len(list(self.db.indicators.find({"_id": indic_code}).limit(1))) == 0:
+            if db == 'WDI' and len(list(self.db.indicators.find({"_id": indic_code}).limit(1))) == 0:
                 desc = find_indicator_desc(code, db)
                 doc = {
                     "_id": indic_code,
@@ -223,7 +220,7 @@ class WorldIndicators:
                         # Must change indicator code to underscores because of Mongo naming restrictions
                         indic_code = str.replace(indic_code, '.', '_')
 
-                        if hasattr(doc['indicators'], indic_code):
+                        if indic_code in doc['indicators']:
                             indic = doc['indicators'][indic_code]
                         else:
                             doc['indicators'][indic_code] = {}
@@ -238,46 +235,46 @@ class WorldIndicators:
                 print("Data replaced with id", result)
 
         elif db == 'WHR':
-            df = pd.read_csv(f'../data/WHR2021_data_panel.csv')
-            df = df.set_index('Country name')
+            for year in years:
+                df = pd.read_csv(f'../data/whr/{year}.csv')
+                df = df.set_index('Country')
 
-            for country_code in countries:
-                doc = self.db.countries.find_one({"_id": country_code})
-                country_key = find_country_name(country_code)
+                for country_code in countries:
+                    doc = self.db.countries.find_one({"_id": country_code})
+                    country_key = doc['name'] if doc else find_country_name(country_code)
 
-                if doc is None:
-                    doc = {
-                        "_id": country_code,
-                        "name": country_key,
-                        "indicators": {}
-                    }
+                    print(f"[{datetime.datetime.now()}] Updating WHR{year} indicators for " +
+                          f"{country_key}")
 
-                country_df = df[df.index == country_key]
-                country_df = country_df.set_index('year')
+                    if doc is None:
+                        doc = {
+                            "_id": country_code,
+                            "name": country_key,
+                            "indicators": {}
+                        }
 
-                for indicator_code in indicators:
-                    indic_key = find_indicator_desc(indicator_code, db)
-                    # Must change indicator code to underscores because of Mongo naming restrictions
-                    indic_key = str.replace(indic_key, '.', '_')
+                    if country_key in df.index:
+                        for indic_key in indicators:
+                            indicator_code = str.replace(indic_key, '.', '_')
 
-                    if indic_key in df.columns:
-                        if hasattr(doc['indicators'], indicator_code):
-                            indic = doc['indicators'][indicator_code]
-                        else:
-                            doc['indicators'][indicator_code] = {}
-                            indic = doc['indicators'][indicator_code]
+                            if indic_key in df.columns:
+                                if indicator_code in doc['indicators']:
+                                    indic = doc['indicators'][indicator_code]
+                                else:
+                                    doc['indicators'][indicator_code] = {}
+                                    indic = doc['indicators'][indicator_code]
 
-                        for y in years:
-                            if y not in country_df.index:
-                                print(f'Year {y} for {country_key} of {indic_key} is missing.')
+                                val = df.at[country_key, indic_key]
+                                val = float(val.replace(',', '.')) if isinstance(val, str) else val
+                                indic.update({str(year): float(val)})
                             else:
-                                val = country_df.at[y, indic_key]
-                                indic.update({str(y): val})
+                                print(f"Skipping {indic_key} because missing in file.")
+
+                        # Update document in remote mongo database
+                        self.db.countries.replace_one({"_id": country_code}, doc)
                     else:
-                        print(f"Skipping {indic_key} because missing in file.")
-
-                # Update document in remote mongo database
-                result = self.db.countries.replace_one({"_id": country_code}, doc)
-                print("Data replaced with id", result)
+                        f"Skipping {country_key} beacuse missing in file."
 
 
+if __name__ == "__main__":
+    print("Blank")

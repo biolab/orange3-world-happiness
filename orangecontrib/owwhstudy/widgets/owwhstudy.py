@@ -4,7 +4,7 @@ from re import match
 
 from AnyQt.QtCore import Qt, Signal, QSortFilterProxyModel, QItemSelection, QItemSelectionModel, \
     QTimer, QModelIndex, QMimeData, QRegExp
-from AnyQt.QtWidgets import QLabel, QVBoxLayout, QFormLayout, QLineEdit, \
+from AnyQt.QtWidgets import QLabel, QGridLayout, QFormLayout, QLineEdit, \
     QTableView, QListView, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QCheckBox
 from AnyQt.QtGui import QStandardItem, QDrag
 
@@ -52,6 +52,7 @@ def run(
         years: List,
         agg_method: int,
         index_freq: int,
+        country_freq: int,
         state: TaskState
 ) -> Table:
     if not countries or not indicators or not years:
@@ -67,7 +68,8 @@ def run(
 
     indicator_codes = [code for (_, code, _, _) in indicators]
 
-    main_df = MONGO_HANDLE.data(countries, indicator_codes, years, callback=callback, index_freq=index_freq)
+    main_df = MONGO_HANDLE.data(countries, indicator_codes, years,
+                                callback=callback, index_freq=index_freq, country_freq=country_freq)
     results = table_from_frame(main_df)
 
     results = AggregationMethods.aggregate(results, years, agg_method if len(years) > 1 else 0)
@@ -288,6 +290,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
 
     agg_method: int = Setting(AggregationMethods.NONE)
     indicator_freq: float = Setting(60)
+    country_freq: float = Setting(90)
     selected_years: List = Setting([])
     selected_indicators: List = Setting([])
     selected_countries: Set = Setting(set(), schema_only=True)
@@ -336,29 +339,32 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
     def _setup_gui(self):
         fbox = gui.widgetBox(self.controlArea, "", orientation=0)
 
-        box = gui.widgetBox(fbox, "Indicator Filtering")
-        vbox = gui.hBox(box)
+        controls_box = gui.widgetBox(fbox, "")
+        tbox = gui.widgetBox(controls_box, "Indicator filtering", orientation=0)
+        vbox = gui.hBox(tbox)
+        sbox = gui.hBox(tbox)
 
         grid = QFormLayout()
         grid.setContentsMargins(0, 0, 0, 0)
         vbox.layout().addLayout(grid)
-        spin = gui.spin(vbox, self, 'indicator_freq', minv=1, maxv=100)
-        grid.addRow("Index frequency (%)", spin)
+        spin_box = gui.vBox(vbox, "Indicator frequency (%)")
+        gui.spin(spin_box, self, 'indicator_freq', minv=1, maxv=100, callback=self.commit)
+        cspin_box = gui.vBox(vbox, "Country frequency (%)")
+        gui.spin(cspin_box, self, 'country_freq', minv=1, maxv=100, callback=self.commit)
 
-        vbox = gui.vBox(box)
-        years_view = gui.listBox(
-            vbox, self, 'selected_years', labels='year_features',
-            selectionMode=QListView.ExtendedSelection, box='Years'
+        agg_box = gui.vBox(vbox, "Aggreagtion by year")
+        gui.comboBox(agg_box, self, 'agg_method', items=AggregationMethods.ITEMS, callback=self.commit)
+        grid.addRow("", spin_box)
+        grid.addRow("", cspin_box)
+        grid.addRow("", agg_box)
+
+        gui.listBox(
+            sbox, self, 'selected_years', labels='year_features',
+            selectionMode=QListView.ExtendedSelection, box='Years',
+            callback=self.commit
         )
 
-        abox = gui.vBox(box, "Aggregation by year")
-        gui.comboBox(
-            abox, self, "agg_method", items=AggregationMethods.ITEMS
-        )
-        bbox = gui.vBox(box)
-        gui.auto_send(bbox, self, "auto_apply")
-
-        box = gui.widgetBox(fbox, "Countries")
+        box = gui.widgetBox(controls_box, "Countries")
 
         self.country_tree = QTreeWidget()
         self.country_tree.setFixedWidth(400)
@@ -366,6 +372,9 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.country_tree.setColumnWidth(0, 300)
         self.country_tree.setHeaderLabels(['Countries'])
         box.layout().addWidget(self.country_tree)
+
+        bbox = gui.vBox(controls_box)
+        gui.auto_send(bbox, self, "auto_apply")
 
         def update_on_change(view):
             # Schedule interface state update on selection change in `view`
@@ -499,7 +508,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.selected_indicators = self.selected_indices_model.tolist()
         self.start(
             run, list(self.selected_countries), self.selected_indicators,
-            years, self.agg_method, self.indicator_freq
+            years, self.agg_method, self.indicator_freq, self.country_freq
         )
 
     def country_checked(self, item: CountryTreeWidgetItem, column):
@@ -508,6 +517,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
                 self.selected_countries.add(item.country_code)
             else:
                 self.selected_countries.discard(item.country_code)
+            self.commit()
 
     def _clear(self):
         self.clear_messages()

@@ -81,7 +81,15 @@ class WorldIndicators:
         cursor = self.db.indicators.find({})
         out = []
         for doc in cursor:
-            out.append((doc['db'], str.replace(doc['_id'], '_', '.'), doc['is_relative'], doc['desc']))
+            indic = [
+                doc['db'],
+                str.replace(doc['_id'], '_', '.'),
+                doc['desc'],
+                doc['code_exp'] if 'code_exp' in doc else [],
+                doc['is_relative'] if 'is_relative' in doc else '',
+                doc['url'] if 'url' in doc else ''
+            ]
+            out.append(tuple(indic))
         return out
 
     def data(self, countries, indicators, year,

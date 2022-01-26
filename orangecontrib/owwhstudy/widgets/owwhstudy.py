@@ -3,10 +3,10 @@ from functools import partial
 from re import match
 
 from AnyQt.QtCore import Qt, Signal, QSortFilterProxyModel, QItemSelection, QItemSelectionModel, \
-    QTimer, QModelIndex, QMimeData, QRegExp
+    QTimer, QModelIndex, QMimeData
 from AnyQt.QtWidgets import QLabel, QGridLayout, QFormLayout, QLineEdit, \
     QTableView, QListView, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QCheckBox
-from AnyQt.QtGui import QStandardItem, QDrag
+from AnyQt.QtGui import QStandardItemModel, QDrag
 
 from Orange.data import Table
 from Orange.data.pandas_compat import table_from_frame
@@ -21,7 +21,7 @@ from Orange.widgets.widget import OWWidget, Output
 from Orange.widgets import gui
 from PyQt5.QtCore import QAbstractItemModel
 
-from orangecontrib.owwhstudy.whstudy import WorldIndicators, AggregationMethods
+from orangecontrib.owwhstudy.whstudy import *
 
 MONGO_HANDLE = WorldIndicators('main', 'biolab')
 
@@ -66,7 +66,7 @@ def run(
         if state.is_interruption_requested():
             raise Exception
 
-    indicator_codes = [code for (_, code, _, _) in indicators]
+    indicator_codes = [code for (_, code, desc, *other) in indicators]
 
     main_df = MONGO_HANDLE.data(countries, indicator_codes, years,
                                 callback=callback, index_freq=index_freq, country_freq=country_freq)
@@ -76,7 +76,7 @@ def run(
 
     # Add descriptions to indicators
     for attrib in results.domain.attributes:
-        for (_, code, _, desc) in indicators:
+        for (_, code, desc, *other) in indicators:
             if code in attrib.name:
                 attrib.attributes["description"] = desc
 
@@ -84,8 +84,20 @@ def run(
 
 
 class CountryTreeWidgetItem(QTreeWidgetItem):
-    def __init__(self, parent, key, code):
+    def __init__(self, parent, key, code, duplicates: list):
+        super().__init__(parent, key)
+        self.country_code = code
+        self.duplicates = []
+
+    def setDuplicatesCheckState(self, p_int, Qt_CheckState):
+        for dupl in self.duplicates:
+            dupl.setCheckState(p_int, Qt_CheckState)
+
+
+class CountryTreeWidgetItemWrapper(QTreeWidgetItem):
+    def __init__(self, parent, key, code, item: CountryTreeWidgetItem):
         super().__init__(parent, [key])
+        self.item = item
         self.country_code = code
 
 
@@ -293,7 +305,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
     country_freq: float = Setting(90)
     selected_years: List = Setting([])
     selected_indicators: List = Setting([])
-    selected_countries: Set = Setting(set(), schema_only=True)
+    selected_countries: Set = Setting(set({}))
     auto_apply: bool = Setting(False)
 
     class Outputs:
@@ -323,12 +335,10 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         # Assign values to control views
         self.year_features = [str(y) for y in range(2020, 1960, -1)]
 
-        ctree = self.create_country_tree(self.country_features)
-        self.country_tree.itemChanged.connect(self.country_checked)
-        self.set_country_tree(ctree, self.country_tree)
+        self.set_country_tree(self.country_features)
 
-        self.available_indices_model.setHorizontalHeaderLabels(['Source', 'Index', 'Relative', 'Description'])
-        self.selected_indices_model.setHorizontalHeaderLabels(['Source', 'Index', 'Relative', 'Description'])
+        self.available_indices_model.setHorizontalHeaderLabels(['Source', 'Index', 'Description'])
+        self.selected_indices_model.setHorizontalHeaderLabels(['Source', 'Index', 'Description'])
 
         self.initial_indices_update()
         self.update_interface_state(self.available_indices_view)
@@ -348,12 +358,15 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         grid.setContentsMargins(0, 0, 0, 0)
         vbox.layout().addLayout(grid)
         spin_box = gui.vBox(vbox, "Indicator frequency (%)")
-        gui.spin(spin_box, self, 'indicator_freq', minv=1, maxv=100, callback=self.commit)
+        gui.spin(spin_box, self, 'indicator_freq', minv=1, maxv=100,
+                 callback=self.__on_dummy_change)
         cspin_box = gui.vBox(vbox, "Country frequency (%)")
-        gui.spin(cspin_box, self, 'country_freq', minv=1, maxv=100, callback=self.commit)
+        gui.spin(cspin_box, self, 'country_freq', minv=1, maxv=100,
+                 callback=self.__on_dummy_change)
 
         agg_box = gui.vBox(vbox, "Aggreagtion by year")
-        gui.comboBox(agg_box, self, 'agg_method', items=AggregationMethods.ITEMS, callback=self.commit)
+        gui.comboBox(agg_box, self, 'agg_method', items=AggregationMethods.ITEMS,
+                     callback=self.__on_dummy_change)
         grid.addRow("", spin_box)
         grid.addRow("", cspin_box)
         grid.addRow("", agg_box)
@@ -361,7 +374,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         gui.listBox(
             sbox, self, 'selected_years', labels='year_features',
             selectionMode=QListView.ExtendedSelection, box='Years',
-            callback=self.commit
+            callback=self.__on_dummy_change
         )
 
         box = gui.widgetBox(controls_box, "Countries")
@@ -372,6 +385,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.country_tree.setColumnWidth(0, 300)
         self.country_tree.setHeaderLabels(['Countries'])
         box.layout().addWidget(self.country_tree)
+        self.country_tree.itemChanged.connect(self.country_checked)
 
         bbox = gui.vBox(controls_box)
         gui.auto_send(bbox, self, "auto_apply")
@@ -462,8 +476,10 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.selected_indices_view.resizeColumnToContents(1)
         self.selected_indices_view.resizeColumnToContents(2)
 
-        self.available_indices_view.setColumnHidden(2, True)
-        self.selected_indices_view.setColumnHidden(2, True)
+        # Hide all collumns used in hover and etc.
+        for i in range(3, self.available_indices_view.colorCount()):
+            self.available_indices_view.setColumnHidden(i, True)
+            self.selected_indices_view.setColumnHidden(i, True)
 
         self.__last_active_view = None
         self.__interface_update_timer.stop()
@@ -492,6 +508,9 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
     def __on_indicator_horizontal_header_clicked(self):
         pass
 
+    def __on_dummy_change(self):
+        self.commit()
+
     def on_exception(self, ex: Exception):
         raise ex
 
@@ -511,8 +530,9 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
             years, self.agg_method, self.indicator_freq, self.country_freq
         )
 
-    def country_checked(self, item: CountryTreeWidgetItem, column):
-        if item.country_code is not None:
+    def country_checked(self, item, column):
+        if type(item) is CountryTreeWidgetItemWrapper:
+            item.item.setDuplicatesCheckState(0, item.checkState(0))
             if item.checkState(column) == Qt.Checked:
                 self.selected_countries.add(item.country_code)
             else:
@@ -526,54 +546,53 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.selected_indicators = []
         self.selected_years = []
 
-    @staticmethod
-    def create_country_tree(data):
-        regions = [('AFR', 'Africa'), ('ECS', 'Europe & Central Asia'),
-                   ('EAS', 'East Asia & Pacific'), ('LCN', 'Latin America and the Caribbean'),
-                   ('NAC', 'North America'), ('SAS', 'South Asia')]
-        members = [
-            {'RWA', 'TZA', 'DZA', 'MAR', 'SEN', 'BDI', 'MOZ', 'GIN', 'EGY', 'MUS', 'GNQ', 'CIV', 'ZAF', 'SLE', 'STP',
-             'UGA', 'ZWE', 'GNB', 'AGO', 'MDG', 'CPV', 'TCD', 'COD', 'COM', 'MWI', 'LSO', 'NGA', 'COG', 'NER', 'BFA',
-             'SYC', 'SSD', 'TGO', 'ETH', 'TUN', 'SOM', 'KEN', 'DJI', 'BWA', 'LBY', 'ERI', 'GHA', 'GAB', 'GMB', 'CMR',
-             'MRT', 'SDN', 'SWZ', 'BEN', 'NAM', 'MLI', 'LBR', 'CAF', 'ZMB'},
-            {'AUT', 'HRV', 'SWE', 'TJK', 'AND', 'UKR', 'TUR', 'NOR', 'BIH', 'FIN', 'FRO', 'CYP', 'GBR', 'HUN', 'ISL',
-             'BEL', 'PRT', 'MCO', 'IMN', 'LTU', 'MDA', 'SVK', 'CHI', 'TKM', 'LVA', 'SRB', 'MKD', 'FRA', 'LIE', 'ESP',
-             'GRL', 'GIB', 'ITA', 'SMR', 'IRL', 'DNK', 'POL', 'AZE', 'CHE', 'EST', 'ARM', 'KAZ', 'LUX', 'ALB', 'GEO',
-             'NLD', 'DEU', 'SVN', 'CZE', 'MNE', 'RUS', 'BLR', 'GRC', 'XKX', 'UZB', 'KGZ', 'ROU', 'BGR'},
-            {'JPN', 'PRK', 'VNM', 'THA', 'FSM', 'HKG', 'MMR', 'SGP', 'TUV', 'TON', 'PNG', 'VUT', 'NRU', 'ASM', 'PYF',
-             'MYS', 'SLB', 'AUS', 'FJI', 'BRN', 'MNG', 'PHL', 'PLW', 'TWN', 'KHM', 'KOR', 'KIR', 'MHL', 'LAO', 'GUM',
-             'MNP', 'IDN', 'WSM', 'MAC', 'NCL', 'NZL', 'TLS', 'CHN'},
-            {'GRD', 'BRB', 'SUR', 'VEN', 'DOM', 'BOL', 'GTM', 'LCA', 'JAM', 'VCT', 'HTI', 'PER', 'SXM', 'TCA', 'GUY',
-             'MAF', 'ECU', 'BHS', 'MEX', 'ATG', 'HND', 'VIR', 'KNA', 'DMA', 'BLZ', 'PRI', 'NIC', 'COL', 'CYM', 'URY',
-             'VGB', 'CHL', 'PAN', 'BRA', 'TTO', 'ABW', 'CUB', 'ARG', 'SLV', 'CUW', 'PRY', 'CRI'}, {'USA', 'CAN', 'BMU'},
-            {'LKA', 'MDV', 'IND', 'AFG', 'NPL', 'BGD', 'BTN', 'PAK'}]
-        tree = {'All': {
-            'Regions': {
-                'Africa': [],
-                'Europe & Central Asia': [],
-                'East Asia & Pacific': [],
-                'Latin America and the Caribbean': [],
-                'North America': [],
-                'South Asia': []
-            }
-        }}
-        regions_node = tree['All']['Regions']
-        for (code, name) in data:
-            for ind in range(len(regions)):
-                if code in members[ind]:
-                    regions_node[regions[ind][1]].append((code, name))
-        return tree
+    def set_country_tree(self, data):
+        root_node = QTreeWidgetItem(self.country_tree, ['All'])
+        root_node.setExpanded(True)
+        root_node.setFlags(root_node.flags() | Qt.ItemIsAutoTristate)
 
-    def set_country_tree(self, data, parent):
-        for key in sorted(data):
-            node = CountryTreeWidgetItem(parent, key[1], key[0]) if isinstance(key, tuple) else \
-                CountryTreeWidgetItem(parent, key, None)
-            state = Qt.Checked if key in self.selected_countries else Qt.Unchecked
-            node.setCheckState(0, state)
-            if isinstance(data, dict) and data[key]:
-                node.setExpanded(key == 'All' or key == 'Regions')
-                node.setFlags(node.flags() | Qt.ItemIsAutoTristate)
-                self.set_country_tree(data[key], node)
+        geo_regions_node = QTreeWidgetItem(root_node, ['Geographical Regions'])
+        geo_regions_node.setExpanded(True)
+        geo_regions_node.setFlags(root_node.flags() | Qt.ItemIsAutoTristate)
+
+        orgs_node = QTreeWidgetItem(root_node, ['Organisations'])
+        orgs_node.setExpanded(True)
+        orgs_node.setFlags(root_node.flags() | Qt.ItemIsAutoTristate)
+
+        geo_region_list = []
+        for (code, name, members) in GEO_REGIONS:
+            geo_region_node = QTreeWidgetItem(geo_regions_node, [name])
+            geo_region_node.setFlags(root_node.flags() | Qt.ItemIsAutoTristate)
+            geo_region_list.append(geo_region_node)
+
+        org_list = []
+        for (code, name, members) in ORGANIZATIONS:
+            org_node = QTreeWidgetItem(orgs_node, [name])
+            org_node.setFlags(root_node.flags() | Qt.ItemIsAutoTristate)
+            org_list.append(org_node)
+
+        for (code, name) in sorted(data, key=lambda tup: tup[1]):
+            item = CountryTreeWidgetItem(None, [name], code, [])
+            state = Qt.Checked if code in self.selected_countries else Qt.Unchecked
+            item.setCheckState(0, state)
+
+            for i in range(len(GEO_REGIONS)):
+                geo_node = geo_region_list[i]
+                members = GEO_REGIONS[i][2]
+                if code in members:
+                    wrapper = CountryTreeWidgetItemWrapper(None, name, code, item)
+                    item.duplicates.append(wrapper)
+                    wrapper.setCheckState(0, state)
+                    geo_node.addChild(wrapper)
+
+            for i in range(len(ORGANIZATIONS)):
+                org_node = org_list[i]
+                members = ORGANIZATIONS[i][2]
+                if code in members:
+                    wrapper = CountryTreeWidgetItemWrapper(None, name, code, item)
+                    item.duplicates.append(wrapper)
+                    wrapper.setCheckState(0, state)
+                    org_node.addChild(wrapper)
 
     def _select_indicator_rows(self):
         model = source_model(self.available_indices_view)

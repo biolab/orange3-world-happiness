@@ -359,10 +359,13 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         vbox.layout().addLayout(grid)
         spin_box = gui.vBox(vbox, "Indicator frequency (%)")
         gui.spin(spin_box, self, 'indicator_freq', minv=1, maxv=100,
-                 callback=self.__on_dummy_change)
+                 callback=self.__on_dummy_change,
+                 tooltip="Percentage of received values to keep indicator."
+                 )
         cspin_box = gui.vBox(vbox, "Country frequency (%)")
         gui.spin(cspin_box, self, 'country_freq', minv=1, maxv=100,
-                 callback=self.__on_dummy_change)
+                 callback=self.__on_dummy_change,
+                 tooltip="Percentage of received values to keep country.")
 
         agg_box = gui.vBox(vbox, "Aggreagtion by year")
         gui.comboBox(agg_box, self, 'agg_method', items=AggregationMethods.ITEMS,

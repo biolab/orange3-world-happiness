@@ -5,7 +5,8 @@ from re import match
 from AnyQt.QtCore import Qt, Signal, QSortFilterProxyModel, QItemSelection, QItemSelectionModel, \
     QTimer, QModelIndex, QMimeData
 from AnyQt.QtWidgets import QLabel, QGridLayout, QFormLayout, QLineEdit, \
-    QTableView, QListView, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QCheckBox
+    QTableView, QListView, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QCheckBox, QSplitter, QVBoxLayout, \
+    QSizePolicy
 from AnyQt.QtGui import QStandardItemModel, QDrag
 
 from Orange.data import Table
@@ -297,8 +298,6 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
     name = "Socioeconomic Indices"
     description = "Gets requested socioeconomic data from WDB/WHR."
     icon = "icons/mywidget.svg"
-    want_main_area = True
-    resizing_enabled = True
 
     agg_method: int = Setting(AggregationMethods.NONE)
     indicator_freq: float = Setting(60)
@@ -307,6 +306,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
     selected_indicators: List = Setting([])
     selected_countries: Set = Setting(set({}))
     auto_apply: bool = Setting(False)
+    splitter_state: bytes = Setting(b'')
 
     class Outputs:
         world_data = Output("World data", Table)
@@ -348,31 +348,34 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
 
     def _setup_gui(self):
         fbox = gui.widgetBox(self.controlArea, "", orientation=0)
-
+        fbox.setFixedWidth(550)
         controls_box = gui.widgetBox(fbox, "")
         tbox = gui.widgetBox(controls_box, "Indicator filtering", orientation=0)
         vbox = gui.hBox(tbox)
         sbox = gui.hBox(tbox)
 
-        grid = QFormLayout()
+        grid = QVBoxLayout()
         grid.setContentsMargins(0, 0, 0, 0)
         vbox.layout().addLayout(grid)
         spin_box = gui.vBox(vbox, "Indicator frequency (%)")
+        grid.addWidget(spin_box, stretch=0, alignment=Qt.AlignLeft)
+        spin_box.setFixedWidth(grid.sizeHint().width())
         gui.spin(spin_box, self, 'indicator_freq', minv=1, maxv=100,
                  callback=self.__on_dummy_change,
                  tooltip="Percentage of received values to keep indicator."
                  )
         cspin_box = gui.vBox(vbox, "Country frequency (%)")
+        grid.addWidget(cspin_box, stretch=0, alignment=Qt.AlignLeft)
+        cspin_box.setFixedWidth(grid.sizeHint().width())
         gui.spin(cspin_box, self, 'country_freq', minv=1, maxv=100,
                  callback=self.__on_dummy_change,
                  tooltip="Percentage of received values to keep country.")
 
         agg_box = gui.vBox(vbox, "Aggreagtion by year")
+        grid.addWidget(agg_box, stretch=0, alignment=Qt.AlignLeft)
+        agg_box.setFixedWidth(grid.sizeHint().width())
         gui.comboBox(agg_box, self, 'agg_method', items=AggregationMethods.ITEMS,
                      callback=self.__on_dummy_change)
-        grid.addRow("", spin_box)
-        grid.addRow("", cspin_box)
-        grid.addRow("", agg_box)
 
         gui.listBox(
             sbox, self, 'selected_years', labels='year_features',
@@ -383,9 +386,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         box = gui.widgetBox(controls_box, "Countries")
 
         self.country_tree = QTreeWidget()
-        self.country_tree.setFixedWidth(400)
         self.country_tree.setColumnCount(1)
-        self.country_tree.setColumnWidth(0, 300)
         self.country_tree.setHeaderLabels(['Countries'])
         box.layout().addWidget(self.country_tree)
         self.country_tree.itemChanged.connect(self.country_checked)
@@ -398,9 +399,9 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
             self.__last_active_view = view
             self.__interface_update_timer.start()
 
-        abox = gui.widgetBox(self.mainArea, "Available Indicators")
-        bbox = gui.widgetBox(self.mainArea, "")
-        sbox = gui.widgetBox(self.mainArea, "Selected Indicators")
+        splitter = QSplitter(orientation=Qt.Vertical)
+        abox = gui.widgetBox(splitter, "Available Indicators")
+        sbox = gui.widgetBox(splitter, "Selected Indicators")
 
         self.__indicator_filter_line_edit = QLineEdit(placeholderText="Filter ...")
 
@@ -411,8 +412,8 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
             self.__on_indicator_relative_changed
         )
 
-        self.__indicator_and_button = gui.button(box, self, "ANY", width=40,
-                                                 callback=self.__on_indicator_filter_changed)
+        self.__indicator_and_button = gui.button(box, self, "Any", width=50, callback=self.__on_indicator_filter_changed)
+        self.__indicator_and_button.adjustSize()
         self.__indicator_and_button.setToolTip("Toggle filtering indicators that include all words.")
 
         hBox = gui.hBox(abox)
@@ -448,6 +449,14 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.selected_indices_view.dragDropActionDidComplete.connect(dropcompleted)
 
         sbox.layout().addWidget(self.selected_indices_view)
+
+        splitter.setSizes([300, 200])
+        splitter.splitterMoved.connect(
+            lambda:
+            setattr(self, "splitter_state", bytes(splitter.saveState()))
+        )
+        self.mainArea.layout().addWidget(splitter)
+        self.resize(1000, 500)
 
     def __update_interface_state(self):
         last_view = self.__last_active_view
@@ -497,7 +506,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
     def __on_indicator_filter_changed(self):
         model = self.available_indices_view.model()
         model.set_and_filter()
-        self.__indicator_and_button.setText("ALL" if model.and_filter else "ANY")
+        self.__indicator_and_button.setText("All" if model.and_filter else "Any")
         self._select_indicator_rows()
 
     def __on_indicator_relative_changed(self):

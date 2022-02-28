@@ -80,6 +80,7 @@ def run(
         for (_, code, desc, *other) in indicators:
             if code in attrib.name:
                 attrib.attributes["description"] = desc
+                print(other)
 
     return results
 

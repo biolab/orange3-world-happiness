@@ -51,18 +51,3 @@ if __name__ == "__main__":
             }
             handle.db.indicators.replace_one({"_id": indic_code}, new_doc)
 
-
-    # for (db, code, is_relative, desc) in indicators:
-    #     indic_code = str.replace(code, ".", "_")
-    #     doc = handle.db.indicators.find_one({"_id": indic_code})
-    #     if code in df.index:
-    #         if not pd.isnull(df.at[code, 'Topic']):
-    #             doc['Topic'] = df.at[code, 'Topic']
-    #         if not pd.isnull(df.at[code, 'SubTopic1']):
-    #             doc['SubTopic1'] = df.at[code, 'SubTopic1']
-    #         if not pd.isnull(df.at[code, 'SubTopic2']):
-    #             doc['SubTopic2'] = df.at[code, 'SubTopic2']
-    #         if not pd.isnull(df.at[code, 'SubTopic3']):
-    #             doc['SubTopic3'] = df.at[code, 'SubTopic3']
-    #         handle.db.indicators.replace_one({"_id": indic_code}, doc)
-

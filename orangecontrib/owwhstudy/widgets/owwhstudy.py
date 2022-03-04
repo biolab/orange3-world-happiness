@@ -75,12 +75,15 @@ def run(
 
     results = AggregationMethods.aggregate(results, years, agg_method if len(years) > 1 else 0)
 
+    exp_names = ['Topic', 'General Subject', 'Specific subject', 'Extension', 'Extension', 'Extension']
     # Add descriptions to indicators
     for attrib in results.domain.attributes:
-        for (_, code, desc, *other) in indicators:
+        for (db, code, desc, ind_exp, is_rel, url) in indicators:
             if code in attrib.name:
-                attrib.attributes["description"] = desc
-                print(other)
+                split = code.split(".")
+                attrib.attributes["Description"] = desc
+                for i in range(len(split)):
+                    attrib.attributes[exp_names[i]] = f"{split[i]} - {ind_exp[i]}"
 
     return results
 
@@ -289,7 +292,7 @@ class IndicatorFilterProxyModel(QSortFilterProxyModel):
 
     def filterAcceptsRow(self, source_row, source_parent):
         row = self.sourceModel()[source_row]
-        return self.filter_accepts_row(row) and (not self.rel_only or (self.rel_only and row[2]))
+        return self.filter_accepts_row(row) and (not self.rel_only or (self.rel_only and row[4]))
 
     def sort(self, column: int, order: Qt.SortOrder = Qt.AscendingOrder):
         super().sort(column, order)
@@ -359,21 +362,21 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         grid.setContentsMargins(0, 0, 0, 0)
         vbox.layout().addLayout(grid)
         spin_box = gui.vBox(vbox, "Indicator frequency (%)")
-        grid.addWidget(spin_box, stretch=0, alignment=Qt.AlignLeft)
+        grid.addWidget(spin_box, alignment=Qt.AlignLeft)
         spin_box.setFixedWidth(grid.sizeHint().width())
         gui.spin(spin_box, self, 'indicator_freq', minv=1, maxv=100,
                  callback=self.__on_dummy_change,
                  tooltip="Percentage of received values to keep indicator."
                  )
         cspin_box = gui.vBox(vbox, "Country frequency (%)")
-        grid.addWidget(cspin_box, stretch=0, alignment=Qt.AlignLeft)
+        grid.addWidget(cspin_box, alignment=Qt.AlignLeft)
         cspin_box.setFixedWidth(grid.sizeHint().width())
         gui.spin(cspin_box, self, 'country_freq', minv=1, maxv=100,
                  callback=self.__on_dummy_change,
                  tooltip="Percentage of received values to keep country.")
 
         agg_box = gui.vBox(vbox, "Aggreagtion by year")
-        grid.addWidget(agg_box, stretch=0, alignment=Qt.AlignLeft)
+        grid.addWidget(agg_box, alignment=Qt.AlignLeft)
         agg_box.setFixedWidth(grid.sizeHint().width())
         gui.comboBox(agg_box, self, 'agg_method', items=AggregationMethods.ITEMS,
                      callback=self.__on_dummy_change)
@@ -383,6 +386,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
             selectionMode=QListView.ExtendedSelection, box='Years',
             callback=self.__on_dummy_change
         )
+        grid.addStretch()
 
         box = gui.widgetBox(controls_box, "Countries")
 

@@ -6,11 +6,15 @@
 # -----------------------------------------------------------
 
 from pprint import pprint
+
+import requests
 import wbgapi as wb
 import pandas as pd
-from pymongo import MongoClient, ReplaceOne
-from Orange.util import dummy_callback
 import datetime
+import pandasdmx as sdmx
+from pymongo import MongoClient
+from Orange.util import dummy_callback
+
 
 MONGODB_HOST = 'cluster0.vxftj.mongodb.net'
 MONGODB_PORT = 27017
@@ -81,12 +85,22 @@ class WorldIndicators:
         cursor = self.db.indicators.find({})
         out = []
         for doc in cursor:
-            out.append((doc['db'], str.replace(doc['_id'], '_', '.'), doc['is_relative'], doc['desc']))
+            indic = [
+                doc['db'],
+                str.replace(doc['_id'], '_', '.'),
+                doc['desc'],
+                doc['code_exp'] if 'code_exp' in doc else [],
+                doc['is_relative'] if 'is_relative' in doc else '',
+                doc['url'] if 'url' in doc else ''
+            ]
+            out.append(tuple(indic))
         return out
 
     def data(self, countries, indicators, year, skip_empty_columns=True,
-             skip_empty_rows=True, include_country_names=True, callback=dummy_callback, index_freq=0):
+             skip_empty_rows=True, include_country_names=True, callback=dummy_callback,
+             index_freq=0, country_freq=0):
         """ Function gets data from local database.
+        :param country_freq: percentage of not NaN values to keep country
         :param index_freq: percentage of not NaN values to keep indicator
         :param callback: callback function
         :param include_country_names: add collumn with country names
@@ -160,8 +174,14 @@ class WorldIndicators:
         if skip_empty_columns:
             df = df.dropna(axis=1, how='all')
 
-        min_count = len(df) * index_freq*0.01
+        # Remove indicator based on percantage of NaN countries
+        min_count = len(df) * index_freq * 0.01
         df = df.dropna(thresh=min_count, axis=1)
+
+        # Remove country based on percentage of NaN indicators
+        min_count = len(df.columns) * country_freq * 0.01
+        df = df.dropna(thresh=min_count, axis=0)
+
         return df
 
     def update(self, countries, indicators, years, db):
@@ -280,14 +300,28 @@ class WorldIndicators:
                         f"Skipping {country_key} beacuse missing in file."
 
         elif db == 'OECD':
-            url = 'http://stats.oecd.org/SDMX-JSON/data/<dataset identifier>/<filter expression>/<agency name>[ ?<additional parameters>]'
+            data_source_url = 'https://stats.oecd.org/sdmx-json/data'
+            data_struct_url = 'https://stats.oecd.org/restsdmx/sdmx.ashx/GetDataStructure/'
+            locs = "+".join(countries)
+
+            uis = sdmx.Request('OECD')
+
+            for dataset_req in indicators:
+                dataset_id, indic_req = dataset_req.split("-")
+                data = uis.data(
+                    resource_id=dataset_id,
+                    key=f"{locs}.{indic_req}"
+                )
+                df = sdmx.to_pandas(data)
+                print(df)
+
+
 
 if __name__ == "__main__":
     handle = WorldIndicators("main", "biolab")
-    indicators = [code for (db, code, _, _) in handle.indicators() if db == 'WHR']
-    countries = [code for (code, _) in handle.countries()]
+    dataset = "BLI"
+    indicator_codes = ["HO", "HO_BASE", "HO_HISH"]
+    indicators = ["BLI-HO_HISH.L.TOT"]
+    countries = ["USA"]
     years = [2021, 2020, 2019, 2018, 2017, 2016, 2015]
-
-    print(countries)
-    print(years)
-    handle.update(countries, indicators, years, db='WHR')
+    handle.update(countries, indicators, years, db='OECD')

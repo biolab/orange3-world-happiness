@@ -5,13 +5,13 @@
 # Author: Nejc Hirci
 # -----------------------------------------------------------
 
-from pprint import pprint
-
-import requests
 import wbgapi as wb
 import pandas as pd
+import re
+from requests import HTTPError
 import datetime
 import pandasdmx as sdmx
+import xmltodict
 from pymongo import MongoClient
 from Orange.util import dummy_callback
 
@@ -200,22 +200,23 @@ class WorldIndicators:
         if type(years) is int:
             years = [years]
 
-        # Create indicator documents if they don't exist
-        for code in indicators:
-            indic_code = str.replace(code, ".", "_")
-            if db == 'WDI' and len(list(self.db.indicators.find({"_id": indic_code}).limit(1))) == 0:
-                desc = find_indicator_desc(code, db)
-                doc = {
-                    "_id": indic_code,
-                    "desc": desc,
-                    "is_relative": '%' in desc,
-                    "db": db,
-                    "url": f"https://data.worldbank.org/indicator/{code}" if db == 'WDI' else None
-                }
-                self.db.indicators.insert_one(doc)
-
         if db == 'WDI':
             wb.db = 2  # Set to WBD/WDI
+
+            # Create indicator documents if they don't exist
+            for code in indicators:
+                indic_code = str.replace(code, ".", "_")
+                if len(list(self.db.indicators.find({"_id": indic_code}).limit(1))) == 0:
+                    desc = find_indicator_desc(code, db)
+                    doc = {
+                        "_id": indic_code,
+                        "db": db,
+                        "code_exp": [],
+                        "desc": desc,
+                        "is_relative": '%' in desc,
+                        "url": f"https://data.worldbank.org/indicator/{code}"
+                    }
+                    self.db.indicators.insert_one(doc)
 
             # For performance reasons split queries on countries and limit to 200 indicators per query
             for country_code in countries:
@@ -299,29 +300,169 @@ class WorldIndicators:
                     else:
                         f"Skipping {country_key} beacuse missing in file."
 
-        elif db == 'OECD':
-            data_source_url = 'https://stats.oecd.org/sdmx-json/data'
-            data_struct_url = 'https://stats.oecd.org/restsdmx/sdmx.ashx/GetDataStructure/'
-            locs = "+".join(countries)
+        elif 'OECD' == 'OECD':
+            # Instead of list of indicator codes we are sending full_documents
 
+            # Create indicator documents if they don't exist
+            for document in indicators:
+                indic_code = str.replace(document['_id'], ".", "_")
+                if len(list(self.db.indicators.find({"_id": indic_code}).limit(1))) == 0:
+                    doc = {
+                        "_id": indic_code,
+                        "db": document['db'],
+                        "code_exp": document['code_exp'],
+                        "desc": document['desc'],
+                        "is_relative": False,
+                        "url": None
+                    }
+                    self.db.indicators.insert_one(doc)
+
+            countries_str = "+".join(countries)
+
+            # Get the requested data with pandasdmx
             uis = sdmx.Request('OECD')
+            big_series = pd.Series()
 
-            for dataset_req in indicators:
-                dataset_id, indic_req = dataset_req.split("-")
-                data = uis.data(
-                    resource_id=dataset_id,
-                    key=f"{locs}.{indic_req}"
-                )
-                df = sdmx.to_pandas(data)
-                print(df)
+            for doc in indicators:
+                dataset_id = doc['db'].split("_")[0]
+                try:
+                    oecd_data = uis.data(
+                        resource_id=dataset_id,
+                        key=f"{countries_str}.{doc['query_code']}",
+                        params={"startTime": years[-1], "endTime": years[0]}
+                    )
+                    series = sdmx.to_pandas(oecd_data)
+                    test = series.droplevel([1, 3, 4, 5, 6])
+                    big_series.concat(test)
 
+                except HTTPError:
+                    print("No Results found for: ", dataset_id)
+                    print(f"\t {countries_str}")
+                    print(f"\t {doc['query_code']}")
 
+            print(big_series)
+            kra
 
 if __name__ == "__main__":
+    with open('../data/oecd_schema/HSL.xml', mode='r') as f:
+        data = f.read()
+        hsl_xml = xmltodict.parse(data)['Structure']['CodeLists']['CodeList']
+        variable = hsl_xml[2]['Code']
+
+        locs = []
+        for i in hsl_xml[0]['Code']:
+            locs.append(i['@value'])
+
+        querry_codes = []
+        code_exp = []
+        for i in variable:
+            if not '_' in i['@value']:
+                # General topic
+                topic_general = i['Description'][0]['#text']
+            else:
+                querry_codes.append(i['@value'])
+                code_exp.append((topic_general, i['Description'][0]["#text"]))
+
+    topic_codes = [
+        ('Income and Wealth', 'IW'),
+        ('Work and Job Quality',  'WJQ'),
+        ('Housing', 'HH'),
+        ('Work-life Balance', 'WLB'),
+        ('Health', 'HLT'),
+        ('Knowledge and skills', 'KS'),
+        ('Social connections', 'SCO'),
+        ('Civic Engagement', 'CE'),
+        ('Safety', 'SAF'),
+        ('Subjective Well-being', 'SWB'),
+        ('Natural Capital', 'NC'),
+        ('Human Capital', 'HC'),
+        ('Social Capital', 'SC'),
+        ('Economic Capital', 'EC')
+    ]
+
+    new_codes = [('Income and Wealth', 'Household income', 'IW.HI'),
+                 ('Income and Wealth', 'Household wealth', 'IW.HW'),
+                 ('Income and Wealth', 'Relative income poverty', 'IW.RIP'),
+                 ('Income and Wealth', 'Difficulty making ends meet', 'IW.DME'),
+                 ('Income and Wealth', 'Financial insecurity', 'IW.FI'),
+                 ('Work and Job Quality', 'Employment rate', 'WJQ.ER'),
+                 ('Work and Job Quality', 'Gender wage gap', 'WJQ.GWG'),
+                 ('Work and Job Quality', 'Long-term unemployment rate', 'WJQ.LUR'),
+                 ('Work and Job Quality', 'Youth not in employment, education or training', 'WJQ.YNI'),
+                 ('Work and Job Quality', 'Labour market insecurity', 'WJQ.LMI'),
+                 ('Work and Job Quality', 'Job strain', 'WJQ.JS'),
+                 ('Work and Job Quality', 'Long hours in paid work', 'WJQ.LHI'),
+                 ('Work and Job Quality', 'Earnings', 'WJQ.E'),
+                 ('Housing', 'Overcrowding rate', 'HH.OR'),
+                 ('Housing', 'Housing affordability', 'HH.HA'),
+                 ('Housing', 'Housing cost overburden', 'HH.HCO'),
+                 ('Housing', 'Poor households without access to basic sanitary facilities', 'HH.PHW'),
+                 ('Housing', 'Households with internet access at home', 'HH.HWI'),
+                 ('Work-life Balance', 'Time off', 'WLB.TO'),
+                 ('Work-life Balance', 'Long unpaid working hours', 'WLB.LUW'),
+                 ('Work-life Balance', 'Gender gap in working hours', 'WLB.GGI'),
+                 ('Work-life Balance', 'Satisfaction with time use', 'WLB.SWT'),
+                 ('Health', 'Life expectancy at birth', 'HLT.LEA'),
+                 ('Health', 'Perceived health', 'HLT.PH'),
+                 ('Health', 'Deaths from suicide, alcohol, drugs', 'HLT.DFS'),
+                 ('Health', 'Self-reported depression', 'HLT.SD'),
+                 ('Knowledge and skills', 'Student skills (reading)', 'KS.SSR'),
+                 ('Knowledge and skills', 'Student skills (maths)', 'KS.SSM'),
+                 ('Knowledge and skills', 'Student skills (science)', 'KS.SSS'),
+                 ('Knowledge and skills', 'Adult skills (numeracy)', 'KS.ASN'),
+                 ('Knowledge and skills', 'Adult skills (literacy)', 'KS.ASL'),
+                 ('Social connections', 'Social support', 'SCO.SS'),
+                 ('Social connections', 'Time spent in social interactions', 'SCO.TSI'),
+                 ('Social connections', 'Satisfaction with personal relationships', 'SCO.SWP'),
+                 ('Civic Engagement', 'Having a say in government', 'CE.HAS'),
+                 ('Civic Engagement', 'Voter turnout', 'CE.VT'),
+                 ('Environmental quality', 'Access to green space', '.ATG'),
+                 ('Environmental quality', 'Air pollution', '.AP'),
+                 ('Safety', 'Homicides', 'SAF.H'),
+                 ('Safety', 'Feeling safe at night', 'SAF.FSA'),
+                 ('Safety', 'Road deaths', 'SAF.RD'),
+                 ('Subjective Well-being', 'Life satisfaction', 'SWB.LS'),
+                 ('Subjective Well-being', 'Negative affect balance', 'SWB.NAB')
+    ]
+
+    # Removing empty data from querry_codes
+    unusable_codes = ['1_2', '12_', '13_', '14_', '15']
+    for i in unusable_codes:
+        for c in querry_codes:
+            if i in c:
+                querry_codes.remove(c)
+
+    new_indicators = []
+    for i in range(len(new_codes)):
+        new_indicators.append({
+            '_id': str.replace(new_codes[i][2], '.','_'),
+            'db': 'HSL_OECD',
+            'code_exp': [
+                new_codes[i][0],
+                new_codes[i][1]
+            ],
+            'query_code': f'AVERAGE+DEP.{querry_codes[i]}.CWB.TOT.TOT.TOT',
+            'desc': new_codes[i][0]+", "+new_codes[i][1],
+            'is_relative': False,
+            'url': None
+        })
+
+    # HSL request structure
+    # COUNTRY.TYPE_OF_INDICATOR.INDICATOR.CURRENT/FUTURE WELL-BEING.SEX.AGE.EDUCATION.TIME
+    # TYPE_OF_INDICATOR: AVERAGE, DEP, VER, HOR
+    # INDICATOR_CODES: parse
+    # WB: CWB, FWB
+    # SEX: TOT, FEMALE, MALE
+    # AGE: TOT, YOUNG, MIDDLE_AGED, OLD
+    # EDUCATION: TOT, PRIMARY, SECONDARY, TERTIARY
+    # TIME: 2002 - 2021
+
     handle = WorldIndicators("main", "biolab")
-    dataset = "BLI"
-    indicator_codes = ["HO", "HO_BASE", "HO_HISH"]
-    indicators = ["BLI-HO_HISH.L.TOT"]
-    countries = ["USA"]
-    years = [2021, 2020, 2019, 2018, 2017, 2016, 2015]
-    handle.update(countries, indicators, years, db='OECD')
+    years = [2021, 2004]
+
+    country_codes = [code for (code, _) in handle.countries()]
+    for loc in locs:
+        if loc not in country_codes:
+            locs.remove(loc)
+
+    handle.update(locs, new_indicators, years, db='OECD')

@@ -321,7 +321,7 @@ class WorldIndicators:
 
             # Get the requested data with pandasdmx
             uis = sdmx.Request('OECD')
-            big_series = pd.Series()
+            big_df = None
 
             for doc in indicators:
                 dataset_id = doc['db'].split("_")[0]
@@ -332,16 +332,48 @@ class WorldIndicators:
                         params={"startTime": years[-1], "endTime": years[0]}
                     )
                     series = sdmx.to_pandas(oecd_data)
-                    test = series.droplevel([1, 3, 4, 5, 6])
-                    big_series.concat(test)
+                    series = series.droplevel([1, 3, 4, 5, 6])
+                    if big_df is None:
+                        big_df = pd.DataFrame(series)
+                    else:
+                        big_df = pd.concat([big_df, pd.DataFrame(series)])
 
                 except HTTPError:
                     print("No Results found for: ", dataset_id)
                     print(f"\t {countries_str}")
                     print(f"\t {doc['query_code']}")
 
-            print(big_series)
-            kra
+            # Next we will load the data to database
+            for country_code in countries:
+                doc = self.db.countries.find_one({"_id": country_code})
+
+                if doc is not None:
+                    num = 0
+                    for indic_doc in indicators:
+                        ref_indic_code = indic_doc['query_code'].split(".")[1]
+                        indic_code = indic_doc['_id']
+
+                        if indic_code in doc['indicators']:
+                            indic = doc['indicators'][indic_code]
+                        else:
+                            doc['indicators'][indic_code] = {}
+                            indic = doc['indicators'][indic_code]
+
+                        y_count = 0
+                        for year in years:
+                            try:
+                                val_loc = big_df.loc[country_code, ref_indic_code, str(year)]
+                                indic.update({str(year): val_loc.values[0][0]})
+                                y_count += 1
+                            except KeyError:
+                                pass
+                        num += (1 < y_count)
+                    print(f"Updated {num}/{len(indicators)} indicators for {country_code}")
+
+                    # Update document in remote mongo database
+                    result = self.db.countries.replace_one({"_id": country_code}, doc)
+                    print("Data replaced with id", result)
+
 
 if __name__ == "__main__":
     with open('../data/oecd_schema/HSL.xml', mode='r') as f:
@@ -372,6 +404,7 @@ if __name__ == "__main__":
         ('Knowledge and skills', 'KS'),
         ('Social connections', 'SCO'),
         ('Civic Engagement', 'CE'),
+        ('Environmental quality', 'EQ'),
         ('Safety', 'SAF'),
         ('Subjective Well-being', 'SWB'),
         ('Natural Capital', 'NC'),
@@ -416,8 +449,8 @@ if __name__ == "__main__":
                  ('Social connections', 'Satisfaction with personal relationships', 'SCO.SWP'),
                  ('Civic Engagement', 'Having a say in government', 'CE.HAS'),
                  ('Civic Engagement', 'Voter turnout', 'CE.VT'),
-                 ('Environmental quality', 'Access to green space', '.ATG'),
-                 ('Environmental quality', 'Air pollution', '.AP'),
+                 ('Environmental quality', 'Access to green space', 'EQ.ATG'),
+                 ('Environmental quality', 'Air pollution', 'EQ.AP'),
                  ('Safety', 'Homicides', 'SAF.H'),
                  ('Safety', 'Feeling safe at night', 'SAF.FSA'),
                  ('Safety', 'Road deaths', 'SAF.RD'),
@@ -426,22 +459,24 @@ if __name__ == "__main__":
     ]
 
     # Removing empty data from querry_codes
-    unusable_codes = ['1_2', '12_', '13_', '14_', '15']
-    for i in unusable_codes:
-        for c in querry_codes:
-            if i in c:
-                querry_codes.remove(c)
+    unusable_codes = ['1_2', '12_*', '13_*', '14_*', '15_*']
+    unusable_regex = re.compile('|'.join(unusable_codes))
+    usuable_codes = []
+
+    for c in querry_codes:
+        if unusable_regex.match(c) is None:
+            usuable_codes.append(c)
 
     new_indicators = []
     for i in range(len(new_codes)):
         new_indicators.append({
-            '_id': str.replace(new_codes[i][2], '.','_'),
+            '_id': str.replace(new_codes[i][2], '.', '_'),
             'db': 'HSL_OECD',
             'code_exp': [
                 new_codes[i][0],
                 new_codes[i][1]
             ],
-            'query_code': f'AVERAGE+DEP.{querry_codes[i]}.CWB.TOT.TOT.TOT',
+            'query_code': f'AVERAGE+DEP.{usuable_codes[i]}.CWB.TOT.TOT.TOT',
             'desc': new_codes[i][0]+", "+new_codes[i][1],
             'is_relative': False,
             'url': None
@@ -458,7 +493,7 @@ if __name__ == "__main__":
     # TIME: 2002 - 2021
 
     handle = WorldIndicators("main", "biolab")
-    years = [2021, 2004]
+    years = list(range(2021, 2004, -1))
 
     country_codes = [code for (code, _) in handle.countries()]
     for loc in locs:

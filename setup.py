@@ -8,7 +8,7 @@ from setuptools import setup, find_packages
 with io.open('README.pypi', 'r', encoding='utf-8') as f:
     ABOUT = f.read()
 
-NAME = "Orange3 World Happiness addon"
+NAME = "Orange3-WorldHappiness"
 
 VERSION = "0.1.0"
 

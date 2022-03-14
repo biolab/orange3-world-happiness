@@ -9,7 +9,7 @@ import pandas as pd
 from Orange.data import Table, table_from_frame, ContinuousVariable
 
 
-from orangecontrib.owwhstudy.whstudy.world_data_api import WorldIndicators
+from orangecontrib.worldhappiness.whstudy.world_data_api import WorldIndicators
 
 GEO_REGIONS = [
     ('AFR', 'Africa',

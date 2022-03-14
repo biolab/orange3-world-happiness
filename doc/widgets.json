@@ -1,0 +1,19 @@
+[
+ [
+  "World Happiness",
+  [
+   {
+    "text": "Socioeconomic Indices",
+    "doc": "widgets/socioeconomicindices.md",
+    "icon": "../orangecontrib/worldhappiness/widgets/icons/socioeconomicindices.svg",
+    "background": "#F7F5A8",
+    "keywords": [
+     "data",
+     "happiness",
+     "socioeconomic",
+     "load"
+    ]
+   }
+  ]
+ ]
+]

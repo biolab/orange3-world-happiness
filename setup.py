@@ -1,35 +1,42 @@
 #!/usr/bin/env python
 
 from os import path, walk
-
+import io
 import sys
 from setuptools import setup, find_packages
 
-NAME = "Orange3 World Socioeconomic data addon"
+with io.open('README.pypi', 'r', encoding='utf-8') as f:
+    ABOUT = f.read()
 
-VERSION = "0.0.1"
+NAME = "Orange3 World Happiness addon"
+
+VERSION = "0.1.0"
 
 AUTHOR = 'Bioinformatics Laboratory, FRI UL'
 AUTHOR_EMAIL = 'contact@orange.biolab.si'
 
 URL = 'http://orange.biolab.si/download'
-DESCRIPTION = "Add-on containing owwhstudy widgets"
-LONG_DESCRIPTION = open(path.join(path.dirname(__file__), 'README.pypi'),
-                        'r', encoding='utf-8').read()
+DESCRIPTION = "Orange3 add-on for retrieving socioeconomic data"
+LONG_DESCRIPTION = ABOUT
+LICENSE = "GPL3+"
 
-LICENSE = "GPL3"
+CLASSIFIERS = [
+    'Development Status :: 3 - Alpha',
+    'Intended Audience :: Education',
+    'Intended Audience :: Science/Research',
+    'License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)',
+    'Programming Language :: Python :: 3 :: Only'
+]
 
-KEYWORDS = (
-    # [PyPi](https://pypi.python.org) packages with keyword "orange3 add-on"
-    # can be installed using the Orange Add-on Manager
+KEYWORDS = [
     'orange3 add-on',
-)
+    'orange3-world-happiness'
+]
 
 PACKAGES = find_packages()
 
 PACKAGE_DATA = {
-    'orangecontrib.owwhstudy': ['tutorials/*.ows'],
-    'orangecontrib.owwhstudy.widgets': ['icons/*'],
+    'orangecontrib.worldhappiness.widgets': ['icons/*'],
 }
 
 DATA_FILES = [
@@ -45,23 +52,12 @@ INSTALL_REQUIRES = [
 ]
 
 ENTRY_POINTS = {
-    # Entry points that marks this package as an orange add-on. If set, addon will
-    # be shown in the add-ons manager even if not published on PyPi.
-    'orange3.addon': (
-        'owwhstudy = orangecontrib.owwhstudy',
-    ),
-
-    # Entry point used to specify packages containing widgets.
-    'orange.widgets': (
-        # Syntax: category name = path.to.package.containing.widgets
-        # Widget category specification can be seen in
-        #    orangecontrib/owwhstudy/widgets/__init__.py
-        'World Happiness = orangecontrib.owwhstudy.widgets',
-    ),
-
-    # Register widget help
-    "orange.canvas.help": (
-        'html-index = orangecontrib.owwhstudy.widgets:WIDGET_HELP_PATH',)
+    'orange3.addon':
+        ('Orange3-WorldHappiness = orangecontrib.worldhappiness',),
+    'orange.widgets':
+        ('World Happiness = orangecontrib.worldhappiness.widgets',),
+    "orange.canvas.help":
+        ('html-index = orangecontrib.worldhappiness.widgets:WIDGET_HELP_PATH',)
 }
 
 NAMESPACE_PACKAGES = ["orangecontrib"]
@@ -83,7 +79,7 @@ def include_documentation(local_dir, install_dir):
 
 
 if __name__ == '__main__':
-    include_documentation('doc/_build/html', 'help/orange3-owwhstudy')
+    include_documentation('doc/_build/htmlhelp', 'help/orange3-worldhappiness')
     setup(
         name=NAME,
         version=VERSION,
@@ -100,6 +96,7 @@ if __name__ == '__main__':
         install_requires=INSTALL_REQUIRES,
         entry_points=ENTRY_POINTS,
         keywords=KEYWORDS,
+        classifiers=CLASSIFIERS,
         namespace_packages=NAMESPACE_PACKAGES,
         zip_safe=False,
     )

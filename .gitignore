@@ -17,6 +17,7 @@ dist
 *.pyd
 *.pyc
 MANIFEST
+_build
 
 # Cython generated files
 __pycache__
@@ -33,7 +34,7 @@ __pycache__
 *.iws
 
 # Python specific stuff
-Orange3_Example_Add_on.egg-info/
+/Orange3_*-info/
 
 # IntelliJ
 out/

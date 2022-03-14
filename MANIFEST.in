@@ -1,2 +1,5 @@
-include orangecontrib/example/tutorials/*.ows
-include orangecontrib/example/widgets/icons/*
+recursive-include doc Makefile *.bat *.json *.md *.png *.py *.rst
+recursive-include orangecontrib/worldhappiness *.svg *.png *.jpg
+
+include orangecontrib/worldhappiness/widgets/icons/*
+include *.py *.txt *.pypi *.md *.yml *.ini

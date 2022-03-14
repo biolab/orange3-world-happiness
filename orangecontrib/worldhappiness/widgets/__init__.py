@@ -12,14 +12,14 @@ BACKGROUND = "light-blue"
 WIDGET_HELP_PATH = (
     # Development documentation
     # You need to build help pages manually using
-    # make htmlhelp
+    # make html
     # inside doc folder
     ("{DEVELOP_ROOT}/doc/_build/htmlhelp/index.html", None),
 
     # Documentation included in wheel
     # Correct DATA_FILES entry is needed in setup.py and documentation has to be built
     # before the wheel is created.
-    ("{}/help/orange3-owwhstudy/index.html".format(sysconfig.get_path("data")), None),
+    ("{}/help/orange3-worldhappiness/index.html".format(sysconfig.get_path("data")), None),
 
     # Online documentation url, used when the local documentation is not available.
     # Url should point to a page with a section Widgets. This section should

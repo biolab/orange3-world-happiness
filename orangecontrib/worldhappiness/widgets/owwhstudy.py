@@ -22,7 +22,7 @@ from Orange.widgets.widget import OWWidget, Output
 from Orange.widgets import gui
 from PyQt5.QtCore import QAbstractItemModel
 
-from orangecontrib.owwhstudy.whstudy import *
+from orangecontrib.worldhappiness.whstudy import *
 
 MONGO_HANDLE = WorldIndicators('main', 'biolab')
 
@@ -301,7 +301,7 @@ class IndicatorFilterProxyModel(QSortFilterProxyModel):
 class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
     name = "Socioeconomic Indices"
     description = "Gets requested socioeconomic data from a remote database with various indicators."
-    icon = "icons/mywidget.svg"
+    icon = "icons/socioeconomicindices.svg"
 
     agg_method: int = Setting(AggregationMethods.NONE)
     indicator_freq: float = Setting(60)

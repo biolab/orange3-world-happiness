@@ -17,7 +17,7 @@ DESCRIPTION = "Add-on containing owwhstudy widgets"
 LONG_DESCRIPTION = open(path.join(path.dirname(__file__), 'README.pypi'),
                         'r', encoding='utf-8').read()
 
-LICENSE = "BSD"
+LICENSE = "GPL3"
 
 KEYWORDS = (
     # [PyPi](https://pypi.python.org) packages with keyword "orange3 add-on"
@@ -37,7 +37,7 @@ DATA_FILES = [
 ]
 
 INSTALL_REQUIRES = [
-    'Orange3',
+    'Orange3>=3.31',
     'pandas',
     'pymongo',
     'wbgapi',
@@ -50,19 +50,13 @@ ENTRY_POINTS = {
     'orange3.addon': (
         'owwhstudy = orangecontrib.owwhstudy',
     ),
-    # Entry point used to specify packages containing tutorials accessible
-    # from welcome screen. Tutorials are saved Orange Workflows (.ows files).
-    'orange.widgets.tutorials': (
-        # Syntax: any_text = path.to.package.containing.tutorials
-        'exampletutorials = orangecontrib.owwhstudy.tutorials',
-    ),
 
     # Entry point used to specify packages containing widgets.
     'orange.widgets': (
         # Syntax: category name = path.to.package.containing.widgets
         # Widget category specification can be seen in
         #    orangecontrib/owwhstudy/widgets/__init__.py
-        'World Data = orangecontrib.owwhstudy.widgets',
+        'World Happiness = orangecontrib.owwhstudy.widgets',
     ),
 
     # Register widget help
@@ -71,8 +65,6 @@ ENTRY_POINTS = {
 }
 
 NAMESPACE_PACKAGES = ["orangecontrib"]
-
-TEST_SUITE = "orangecontrib.owwhstudy.tests.suite"
 
 
 def include_documentation(local_dir, install_dir):

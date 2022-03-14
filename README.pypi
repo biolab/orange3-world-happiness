@@ -1,11 +1,12 @@
-Orange3 Explain
+Orange3 World Happiness
 ===============
 
-Short description for the PyPI.
-See [documentation](http://orange3-imageanalytics.readthedocs.org/).
+Enables downloading of socioeconomic data in Orange3 from
+a remote mongo database filled with indicators from various
+economic databases.
 
 Features
 --------
-#### List of key features
-* Feature 1
-* Feature 2
+#### World Happiness data
+* download and use socieconomic data
+* filter based on region, year, country, organization

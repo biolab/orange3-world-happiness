@@ -1,9 +1,9 @@
-Orange3 Example Add-on
+Orange3 World Happiness
 ======================
 
-This is an example add-on for [Orange3](http://orange.biolab.si). Add-on can extend Orange either 
-in scripting or GUI part, or in both. We here focus on the GUI part and implement a simple (empty) widget,
-register it with Orange and add a new workflow with this widget to example tutorials.
+Orange3 World Happiness is an add-on for the [Orange3](http://orange.biolab.si) data mining suite. It provides widgets 
+for accessing socioeconomic data from various databases such as [WHR](https://worldhappiness.report/), 
+[WDI](https://data.worldbank.org/), [OECD](https://stats.oecd.org/).
 
 Installation
 ------------
@@ -35,6 +35,4 @@ or
 
     python -m Orange.canvas
 
-The new widget appears in the toolbox bar under the section Example.
-
-![screenshot](https://github.com/biolab/orange3-example-addon/blob/master/screenshot.png)
+The new widget appears in the toolbox bar under the World Happiness section.

@@ -300,7 +300,7 @@ class IndicatorFilterProxyModel(QSortFilterProxyModel):
 
 class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
     name = "Socioeconomic Indices"
-    description = "Gets requested socioeconomic data from WDB/WHR."
+    description = "Gets requested socioeconomic data from a remote database with various indicators."
     icon = "icons/mywidget.svg"
 
     agg_method: int = Setting(AggregationMethods.NONE)
@@ -429,7 +429,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
 
         def dropcompleted(action):
             if action == Qt.MoveAction:
-                self.commit()
+                self.commit.deferred()
 
         self.available_indices_model = IndicatorTableModel()
         self.available_indices_view = IndicatorTableView()
@@ -452,7 +452,6 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.selected_indices_view.selectionModel().selectionChanged.connect(
             partial(update_on_change, self.selected_indices_view))
         self.selected_indices_view.dragDropActionDidComplete.connect(dropcompleted)
-
         sbox.layout().addWidget(self.selected_indices_view)
 
         splitter.setSizes([300, 200])
@@ -461,7 +460,6 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
             setattr(self, "splitter_state", bytes(splitter.saveState()))
         )
         self.mainArea.layout().addWidget(splitter)
-        self.resize(1000, 500)
 
     def __update_interface_state(self):
         last_view = self.__last_active_view
@@ -480,10 +478,6 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
 
         available_selected = selected_indices(self.available_indices_view)
         indices_selected = selected_indices(self.selected_indices_view)
-
-        move_indices_enabled = \
-            (available_selected or indices_selected) and \
-            self.selected_indices_view.isEnabled()
 
         self.available_indices_view.resizeColumnToContents(0)
         self.available_indices_view.resizeColumnToContents(1)
@@ -506,7 +500,21 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.available_indices_model[:] = [index for index in self.indicator_features
                                            if index not in used]
         self.selected_indices_model[:] = self.selected_indicators
-        self.commit()
+
+        self.available_indices_view.resizeColumnToContents(0)
+        self.available_indices_view.resizeColumnToContents(1)
+        self.available_indices_view.resizeColumnToContents(2)
+
+        self.selected_indices_view.resizeColumnToContents(0)
+        self.selected_indices_view.resizeColumnToContents(1)
+        self.selected_indices_view.resizeColumnToContents(2)
+
+        # Hide all collumns used in hover and etc.
+        for i in range(3, self.available_indices_view.colorCount()):
+            self.available_indices_view.setColumnHidden(i, True)
+            self.selected_indices_view.setColumnHidden(i, True)
+
+        self.commit.deferred()
 
     def __on_indicator_filter_changed(self):
         model = self.available_indices_view.model()
@@ -520,13 +528,10 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self._select_indicator_rows()
 
     def __selected_indicators_changed(self):
-        self.commit()
-
-    def __on_indicator_horizontal_header_clicked(self):
-        pass
+        self.commit.deferred()
 
     def __on_dummy_change(self):
-        self.commit()
+        self.commit.deferred()
 
     def on_exception(self, ex: Exception):
         raise ex
@@ -537,6 +542,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
     def on_partial_result(self, result: Any) -> None:
         pass
 
+    @gui.deferred
     def commit(self):
         years = []
         for i in self.selected_years:
@@ -554,7 +560,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
                 self.selected_countries.add(item.country_code)
             else:
                 self.selected_countries.discard(item.country_code)
-            self.commit()
+            self.commit.deferred()
 
     def _clear(self):
         self.clear_messages()

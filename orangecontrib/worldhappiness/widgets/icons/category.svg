@@ -1,9 +1,1 @@
-<?xml version="1.0"?>
-<svg width="48" height="48" xmlns="http://www.w3.org/2000/svg">
- <!-- Created with SVG-edit - http://svg-edit.googlecode.com/ -->
- <title>Category Icon</title>
- <g>
-  <title>Layer 1</title>
-  <text transform="matrix(2.1520881448613944,0,0,1.827148799789029,-27.0810469525093,-19.479205367873945) " xml:space="preserve" text-anchor="middle" font-family="serif" font-size="24" id="svg_1" y="31.557737" x="24.102223" stroke-width="0" stroke="#000000" fill="#000000">X</text>
- </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><defs><style>.cls-1{fill:#fff;}.cls-2,.cls-3{fill:#333;}.cls-3{stroke:#333;stroke-miterlimit:10;stroke-width:0.5px;}</style></defs><g id="Draw_Layer" data-name="Draw Layer"><path class="cls-1" d="M25,8H13V40H35V17c0-4.12-8-1-8-1C28,12,27,8,25,8Z"/><path class="cls-2" d="M28,6H11V42H37V14Zm7,34H13V8H25c2,0,3,4,2,8,0,0,8-3.12,8,1Z"/><path class="cls-2" d="M23.82,37.62a9,9,0,1,1,9-9A9,9,0,0,1,23.82,37.62Zm0-16.64a7.62,7.62,0,1,0,7.63,7.62A7.63,7.63,0,0,0,23.82,21Z"/><ellipse class="cls-2" cx="21.31" cy="26.57" rx="1.1" ry="1.49"/><ellipse class="cls-2" cx="26.33" cy="26.57" rx="1.1" ry="1.49"/><path class="cls-3" d="M23.82,33.52a4.8,4.8,0,0,0,4.59-3.39h-.79a4.05,4.05,0,0,1-7.6,0h-.79A4.81,4.81,0,0,0,23.82,33.52Z"/></g></svg>

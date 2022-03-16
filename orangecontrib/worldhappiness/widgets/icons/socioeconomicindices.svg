@@ -1,8 +1,1 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="420"
-height="420" stroke="#000" fill="none">
-<path stroke-width="26"
-d="M209,15a195,195 0 1,0 2,0z"/>
-<path stroke-width="18"
-d="m210,15v390m195-195H15M59,90a260,260 0 0,0 302,0 m0,240 a260,260 0 0,0-302,0M195,20a250,250 0 0,0 0,382 m30,0 a250,250 0 0,0 0-382"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><defs><style>.cls-1{fill:#fff;}.cls-2,.cls-3{fill:#333;}.cls-3{stroke:#333;stroke-miterlimit:10;stroke-width:0.5px;}</style></defs><g id="Draw_Layer" data-name="Draw Layer"><path class="cls-1" d="M25,8H13V40H35V17c0-4.12-8-1-8-1C28,12,27,8,25,8Z"/><path class="cls-2" d="M28,6H11V42H37V14Zm7,34H13V8H25c2,0,3,4,2,8,0,0,8-3.12,8,1Z"/><path class="cls-2" d="M23.82,37.62a9,9,0,1,1,9-9A9,9,0,0,1,23.82,37.62Zm0-16.64a7.62,7.62,0,1,0,7.63,7.62A7.63,7.63,0,0,0,23.82,21Z"/><ellipse class="cls-2" cx="21.31" cy="26.57" rx="1.1" ry="1.49"/><ellipse class="cls-2" cx="26.33" cy="26.57" rx="1.1" ry="1.49"/><path class="cls-3" d="M23.82,33.52a4.8,4.8,0,0,0,4.59-3.39h-.79a4.05,4.05,0,0,1-7.6,0h-.79A4.81,4.81,0,0,0,23.82,33.52Z"/></g></svg>

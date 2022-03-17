@@ -1,9 +1,1 @@
-<?xml version="1.0"?>
-<svg width="48" height="48" xmlns="http://www.w3.org/2000/svg">
- <!-- Created with SVG-edit - http://svg-edit.googlecode.com/ -->
- <title>Category Icon</title>
- <g>
-  <title>Layer 1</title>
-  <text transform="matrix(2.1520881448613944,0,0,1.827148799789029,-27.0810469525093,-19.479205367873945) " xml:space="preserve" text-anchor="middle" font-family="serif" font-size="24" id="svg_1" y="31.557737" x="24.102223" stroke-width="0" stroke="#000000" fill="#000000">X</text>
- </g>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><defs><style>.cls-1,.cls-2{fill:#333;}.cls-2{stroke:#333;stroke-miterlimit:10;stroke-width:0.5px;}</style></defs><g id="Draw_Layer" data-name="Draw Layer"><path class="cls-1" d="M24,43.53A19.53,19.53,0,1,1,43.53,24,19.55,19.55,0,0,1,24,43.53Zm0-36A16.5,16.5,0,1,0,40.5,24,16.52,16.52,0,0,0,24,7.5Z"/><ellipse class="cls-1" cx="18.57" cy="19.61" rx="2.39" ry="3.22"/><ellipse class="cls-1" cx="29.43" cy="19.61" rx="2.39" ry="3.22"/><path class="cls-2" d="M24,34.64a10.41,10.41,0,0,0,9.94-7.34H32.22a8.76,8.76,0,0,1-16.44,0H14.06A10.41,10.41,0,0,0,24,34.64Z"/></g></svg>

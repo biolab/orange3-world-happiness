@@ -24,4 +24,5 @@ a remote mongo database filled from various economic databases such as [WHR](htt
 8. Check to filter only relative indicators.
 9. Retrieve data from remote database based on current selection.
 
-You can drag and drop indicators between **Available Indicator** table and **Selected Indicators** table.
+You can drag and drop indicators between **Available Indicators** and **Selected Indicators**.
+To delete **Selected Indicators** you can use delete or drag them back to **Available Indicators**.

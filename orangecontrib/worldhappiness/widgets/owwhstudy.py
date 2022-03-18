@@ -1,26 +1,20 @@
-from typing import Any, List, Set
+from typing import Any, Set
 from functools import partial
-from re import match
 
 from AnyQt.QtCore import Qt, Signal, QSortFilterProxyModel, QItemSelection, QItemSelectionModel, \
     QTimer, QModelIndex, QMimeData
-from AnyQt.QtWidgets import QLabel, QGridLayout, QFormLayout, QLineEdit, \
-    QTableView, QListView, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QCheckBox, QSplitter, QVBoxLayout, \
-    QSizePolicy
-from AnyQt.QtGui import QStandardItemModel, QDrag
+from AnyQt.QtWidgets import QLineEdit, \
+    QTableView, QListView, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QCheckBox, QSplitter, QVBoxLayout
+from AnyQt.QtGui import QDrag
 
-from Orange.data import Table
-from Orange.data.pandas_compat import table_from_frame
 from Orange.widgets.settings import Setting, ContextSetting
-from Orange.widgets.utils import vartype
 from Orange.widgets.utils.concurrent import ConcurrentWidgetMixin, TaskState
-from Orange.widgets.utils.itemmodels import PyTableModel, PyListModel
+from Orange.widgets.utils.itemmodels import PyTableModel
 from Orange.widgets.utils.listfilter import (
-    VariablesListItemView, slices, variables_filter, delslice
+    slices, delslice
 )
 from Orange.widgets.widget import OWWidget, Output
 from Orange.widgets import gui
-from PyQt5.QtCore import QAbstractItemModel
 
 from orangecontrib.worldhappiness.whstudy import *
 
@@ -152,7 +146,7 @@ class IndicatorTableView(QTableView):
                 default_action = Qt.CopyAction
             res = drag.exec(supported_actions, default_action)
             if res == Qt.MoveAction:
-                selected = self.selectionModel().selectedIndexes()
+                selected = self.selectionModel().selectedRows()
                 rows = list(map(QModelIndex.row, selected))
                 for s1, s2 in reversed(list(slices(rows))):
                     delslice(self.model(), s1, s2)

@@ -97,11 +97,13 @@ class AggregationMethods:
                 df.insert(loc=1, column='Country name', value=list(world_data.metas_df.iloc[:, 1]))
 
             for row in world_data:
+                country_name = row.metas[0]
                 for indicator in cols:
                     values = []
                     for year in years:
                         name = f"{year}-{indicator}"
                         if ContinuousVariable(name) in world_data.domain.attributes and not np.isnan(row[name]):
                             values.append(row[name])
-                    df.at[row['Country code'], indicator] = agg_functions[agg_method](values) if values else np.nan
+                    df.at[country_name, indicator] = agg_functions[agg_method](values) \
+                        if len(values) > 1 else np.nan
             return table_from_frame(df)

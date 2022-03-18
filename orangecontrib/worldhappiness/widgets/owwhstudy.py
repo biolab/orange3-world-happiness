@@ -7,7 +7,7 @@ from AnyQt.QtWidgets import QLineEdit, \
     QTableView, QListView, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QCheckBox, QSplitter, QVBoxLayout
 from AnyQt.QtGui import QDrag
 
-from Orange.widgets.settings import Setting, ContextSetting
+from Orange.widgets.settings import Setting
 from Orange.widgets.utils.concurrent import ConcurrentWidgetMixin, TaskState
 from Orange.widgets.utils.itemmodels import PyTableModel
 from Orange.widgets.utils.listfilter import (
@@ -19,6 +19,10 @@ from Orange.widgets import gui
 from orangecontrib.worldhappiness.whstudy import *
 
 MONGO_HANDLE = WorldIndicators('main', 'biolab')
+EXP_NAMES = ['Topic', 'General Subject', 'Specific subject', 'Extension', 'Extension', 'Extension']
+DB_NAMES = [('WDI', 'World Data Indicators'),
+            ('WHR', 'World Happiness Report'),
+            ('HSL_OECD', 'How\'s life \r\nOrganization for Economic Co-operation and Development')]
 
 
 def source_model(view):
@@ -69,7 +73,6 @@ def run(
 
     results = AggregationMethods.aggregate(results, years, agg_method if len(years) > 1 else 0)
 
-    exp_names = ['Topic', 'General Subject', 'Specific subject', 'Extension', 'Extension', 'Extension']
     # Add descriptions to indicators
     for attrib in results.domain.attributes:
         for (db, code, desc, ind_exp, is_rel, url) in indicators:
@@ -77,7 +80,7 @@ def run(
                 split = code.split(".")
                 attrib.attributes["Description"] = desc
                 for i in range(len(split)):
-                    attrib.attributes[exp_names[i]] = f"{split[i]} - {ind_exp[i]}"
+                    attrib.attributes[EXP_NAMES[i]] = f"{split[i]} - {ind_exp[i]}"
 
     return results
 
@@ -199,8 +202,35 @@ class IndicatorTableModel(PyTableModel):
     def wrap(self, table):
         super().wrap(table)
 
+    def setData(self, index, value, role):
+        row = self.mapFromSourceRows(index.row())
+        if role == Qt.EditRole:
+            self[row][index.column()] = value
+            self.dataChanged.emit(index, index)
+        else:
+            self._roleData[row][index.column()][role] = value
+        return True
+
     def data(self, index, role=Qt.DisplayRole):
-        return super().data(index, role)
+        if role == Qt.ToolTipRole:
+            row = self.mapFromSourceRows(index.row())
+            col = index.column()
+            if col == 0:
+                value = self[row][col]
+                for (code, tooltip) in DB_NAMES:
+                    if code == value:
+                        return tooltip
+            if col == 1:
+                code = self[row][col]
+                exp = self[row][3]
+                split = code.split(".")
+                tips = []
+                for i in range(len(split)):
+                    tips.append(f"{split[i]} - {exp[i]}")
+                return "\r\n".join(tips)
+            return ""
+        else:
+            return super().data(index, role)
 
     def flags(self, index):
         flags = super().flags(index)
@@ -335,8 +365,8 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
 
         self.set_country_tree(self.country_features)
 
-        self.available_indices_model.setHorizontalHeaderLabels(['Source', 'Index', 'Description'])
-        self.selected_indices_model.setHorizontalHeaderLabels(['Source', 'Index', 'Description'])
+        self.available_indices_model.setHorizontalHeaderLabels(['Source', 'Indicator', 'Description'])
+        self.selected_indices_model.setHorizontalHeaderLabels(['Source', 'Indicator', 'Description'])
 
         self.initial_indices_update()
         self.update_interface_state(self.available_indices_view)
@@ -399,8 +429,8 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
             self.__interface_update_timer.start()
 
         splitter = QSplitter(orientation=Qt.Vertical)
-        abox = gui.widgetBox(splitter, "Available Indicators")
-        sbox = gui.widgetBox(splitter, "Selected Indicators")
+        available_box = gui.widgetBox(splitter, "Available Indicators")
+        selected_box = gui.widgetBox(splitter, "Selected Indicators")
 
         self.__indicator_filter_line_edit = QLineEdit(placeholderText="Filter ...")
 
@@ -415,11 +445,11 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.__indicator_and_button.adjustSize()
         self.__indicator_and_button.setToolTip("Toggle filtering indicators that include all words.")
 
-        hBox = gui.hBox(abox)
-        hBox.layout().addWidget(self.__indicator_filter_line_edit)
-        hBox.layout().addWidget(self.__indicator_and_button)
-        hBox.layout().addWidget(self.__indicator_relative_checkbox)
-        abox.layout().addWidget(hBox)
+        filters_row = gui.hBox(available_box)
+        filters_row.layout().addWidget(self.__indicator_filter_line_edit)
+        filters_row.layout().addWidget(self.__indicator_and_button)
+        filters_row.layout().addWidget(self.__indicator_relative_checkbox)
+        available_box.layout().addWidget(filters_row)
 
         def dropcompleted(action):
             if action == Qt.MoveAction:
@@ -436,17 +466,17 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.available_indices_view.selectionModel().selectionChanged.connect(
             partial(update_on_change, self.available_indices_view))
         self.available_indices_view.dragDropActionDidComplete.connect(dropcompleted)
-        abox.layout().addWidget(self.available_indices_view)
+        available_box.layout().addWidget(self.available_indices_view)
 
         self.selected_indices_model = IndicatorTableModel()
         self.selected_indices_view = IndicatorTableView()
         self.selected_indices_view.setModel(self.selected_indices_model)
-        self.selected_indices_model.rowsInserted.connect(self.__selected_indicators_changed)
-        self.selected_indices_model.rowsRemoved.connect(self.__selected_indicators_changed)
+        self.selected_indices_model.rowsInserted.connect(self.__on_dummy_change)
+        self.selected_indices_model.rowsRemoved.connect(self.__on_dummy_change)
         self.selected_indices_view.selectionModel().selectionChanged.connect(
             partial(update_on_change, self.selected_indices_view))
         self.selected_indices_view.dragDropActionDidComplete.connect(dropcompleted)
-        sbox.layout().addWidget(self.selected_indices_view)
+        selected_box.layout().addWidget(self.selected_indices_view)
 
         splitter.setSizes([300, 200])
         splitter.splitterMoved.connect(
@@ -466,20 +496,11 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
                     and view.selectionModel().hasSelection():
                 view.selectionModel().clear()
 
-        def selected_indices(view):
-            model = source_model(view)
-            return [model[i] for i in self.selected_rows(view)]
-
-        available_selected = selected_indices(self.available_indices_view)
-        indices_selected = selected_indices(self.selected_indices_view)
-
         self.available_indices_view.resizeColumnToContents(0)
         self.available_indices_view.resizeColumnToContents(1)
-        self.available_indices_view.resizeColumnToContents(2)
 
-        self.selected_indices_view.resizeColumnToContents(0)
-        self.selected_indices_view.resizeColumnToContents(1)
-        self.selected_indices_view.resizeColumnToContents(2)
+        self.selected_indices_view.setColumnWidth(0, self.available_indices_view.columnWidth(0))
+        self.selected_indices_view.setColumnWidth(1, self.available_indices_view.columnWidth(1))
 
         # Hide all collumns used in hover and etc.
         for i in range(3, self.available_indices_view.colorCount()):
@@ -497,11 +518,9 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
 
         self.available_indices_view.resizeColumnToContents(0)
         self.available_indices_view.resizeColumnToContents(1)
-        self.available_indices_view.resizeColumnToContents(2)
 
-        self.selected_indices_view.resizeColumnToContents(0)
-        self.selected_indices_view.resizeColumnToContents(1)
-        self.selected_indices_view.resizeColumnToContents(2)
+        self.selected_indices_view.setColumnWidth(0, self.available_indices_view.columnWidth(0))
+        self.selected_indices_view.setColumnWidth(1, self.available_indices_view.columnWidth(1))
 
         # Hide all collumns used in hover and etc.
         for i in range(3, self.available_indices_view.colorCount()):
@@ -520,9 +539,6 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         model = self.available_indices_view.model()
         model.set_rel(self.__indicator_relative_checkbox.isChecked())
         self._select_indicator_rows()
-
-    def __selected_indicators_changed(self):
-        self.commit.deferred()
 
     def __on_dummy_change(self):
         self.commit.deferred()

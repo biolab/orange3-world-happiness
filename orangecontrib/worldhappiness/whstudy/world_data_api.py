@@ -64,14 +64,8 @@ class WorldIndicators:
         """ Function gets data from local database.
         :return: list of years with data
         """
-
-        cursor = self.db.countries.find({}, {"indicators": 1})
-        years = set()
-        for doc in cursor:
-            for _, val in doc['indicators'].items():
-                for key in val.keys():
-                    years.add(key)
-        return list(years)
+        years = [str(y) for y in range(2021, 1960, -1)]
+        return years
 
     def indicators(self):
         """ Function gets data from local database.

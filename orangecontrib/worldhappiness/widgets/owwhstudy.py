@@ -87,7 +87,7 @@ def run(
 
 
 class CountryTreeWidgetItem(QTreeWidgetItem):
-    def __init__(self, parent, key, code, duplicates: list):
+    def __init__(self, parent, key, code):
         super().__init__(parent, key)
         self.country_code = code
         self.duplicates = []
@@ -120,7 +120,7 @@ class IndicatorTableView(QTableView):
         self.setSelectionMode(self.ExtendedSelection)
         self.setAcceptDrops(True)
         self.setDragEnabled(True)
-        self.setSortingEnabled(False)
+        self.setSortingEnabled(True)
         self.setDropIndicatorShown(True)
         self.setDragDropMode(self.DragDrop)
         self.setDefaultDropAction(Qt.MoveAction)
@@ -153,8 +153,13 @@ class IndicatorTableView(QTableView):
             if res == Qt.MoveAction:
                 selected = self.selectionModel().selectedRows()
                 rows = list(map(QModelIndex.row, selected))
+                rows = self.model().mapToSourceRows(rows)
+                order = self.horizontalHeader().sortIndicatorOrder()
+                col = self.horizontalHeader().sortIndicatorSection()
+                self.model().resetSorting()
                 for s1, s2 in reversed(list(slices(rows))):
                     delslice(self.model(), s1, s2)
+                self.sortByColumn(col, order)
             self.dragDropActionDidComplete.emit(res)
 
     def dropEvent(self, event):
@@ -354,14 +359,14 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         super().__init__()
 
         self.world_data = None
-        self.year_features = []
-        self.country_features = MONGO_HANDLE.countries()
-        self.indicator_features = MONGO_HANDLE.indicators()
+        self.year_features = MONGO_HANDLE.years()
 
         self._setup_gui()
 
         # Assign values to control views
-        self.year_features = [str(y) for y in range(2020, 1960, -1)]
+        self.year_features = MONGO_HANDLE.years()
+        self.country_features = MONGO_HANDLE.countries()
+        self.indicator_features = MONGO_HANDLE.indicators()
 
         self.set_country_tree(self.country_features)
 
@@ -400,7 +405,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         gui.comboBox(agg_box, self, 'agg_method', items=AggregationMethods.ITEMS,
                      callback=self.__on_dummy_change)
 
-        gui.listBox(
+        self.years_list = gui.listBox(
             sbox, self, 'selected_years', labels='year_features',
             selectionMode=QListView.ExtendedSelection, box='Years',
             callback=self.__on_dummy_change
@@ -509,10 +514,18 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
             rows = self.selected_rows(self.selected_indices_view)
             if rows:
                 src_model = source_model(self.selected_indices_view)
-                indics = [src_model[r] for r in rows]
+                unsorted_rows = src_model.mapToSourceRows(rows)
+                indics = [src_model[r] for r in unsorted_rows]
 
-                for s1, s2 in reversed(list(slices(rows))):
+                order = self.selected_indices_view.horizontalHeader().sortIndicatorOrder()
+                col = self.selected_indices_view.horizontalHeader().sortIndicatorSection()
+
+                src_model.resetSorting()
+
+                for s1, s2 in reversed(list(slices(unsorted_rows))):
                     delslice(src_model, s1, s2)
+
+                self.selected_indices_view.sortByColumn(col, order)
 
                 dst_model = source_model(self.available_indices_view)
                 dst_model.extend(indics)
@@ -584,7 +597,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
             org_list.append(org_node)
 
         for (code, name) in sorted(data, key=lambda tup: tup[1]):
-            item = CountryTreeWidgetItem(None, [name], code, [])
+            item = CountryTreeWidgetItem(None, [name], code)
             state = Qt.Checked if code in self.selected_countries else Qt.Unchecked
             item.setCheckState(0, state)
 

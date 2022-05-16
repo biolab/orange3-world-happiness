@@ -153,13 +153,11 @@ class IndicatorTableView(QTableView):
             if res == Qt.MoveAction:
                 selected = self.selectionModel().selectedRows()
                 rows = list(map(QModelIndex.row, selected))
-                rows = self.model().mapToSourceRows(rows)
-                order = self.horizontalHeader().sortIndicatorOrder()
-                col = self.horizontalHeader().sortIndicatorSection()
-                self.model().resetSorting()
+                model = source_model(self)
+                rows = model.mapToSourceRows(rows)
+                model.resetSorting()
                 for s1, s2 in reversed(list(slices(rows))):
                     delslice(self.model(), s1, s2)
-                self.sortByColumn(col, order)
             self.dragDropActionDidComplete.emit(res)
 
     def dropEvent(self, event):
@@ -291,6 +289,7 @@ class IndicatorTableModel(PyTableModel):
             row = self.rowCount()
 
         self[row:row] = indicators
+
         return True
 
 

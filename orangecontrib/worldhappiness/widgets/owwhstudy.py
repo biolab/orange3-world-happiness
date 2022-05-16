@@ -287,7 +287,7 @@ class IndicatorTableModel(PyTableModel):
             return False  # pragma: no cover
         if row < 0:
             row = self.rowCount()
-
+        self.resetSorting()
         self[row:row] = indicators
 
         return True

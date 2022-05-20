@@ -235,7 +235,10 @@ class IndicatorTableModel(PyTableModel):
                 exp = self[row][3]
                 split = code.split(".")
                 tips = []
-                for i in range(len(split)):
+                if len(split) != len(exp):
+                    print(split)
+                    print(exp)
+                for i in range(min(len(split), len(exp))):
                     tips.append(f"{split[i]} - {exp[i]}")
                 return "\r\n".join(tips)
             return ""
@@ -524,7 +527,8 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
                 for s1, s2 in reversed(list(slices(unsorted_rows))):
                     delslice(src_model, s1, s2)
 
-                self.selected_indices_view.sortByColumn(col, order)
+                if col <= 2:
+                    self.selected_indices_view.sortByColumn(col, order)
 
                 dst_model = source_model(self.available_indices_view)
                 dst_model.extend(indics)

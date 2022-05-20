@@ -340,13 +340,13 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
     description = "Gets requested socioeconomic data from a remote database with various indicators."
     icon = "icons/socioeconomicindices.svg"
 
-    agg_method: int = Setting(AggregationMethods.NONE)
+    agg_method: int = Setting(AggregationMethods.MEAN)
     indicator_freq: float = Setting(60)
     country_freq: float = Setting(90)
     selected_years: List = Setting([])
     selected_indicators: List = Setting([])
     selected_countries: Set = Setting(set({}))
-    auto_apply: bool = Setting(False)
+    auto_apply: bool = Setting(True)
     splitter_state: bytes = Setting(b'')
 
     class Outputs:
@@ -371,7 +371,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
 
         self.initial_indices_update()
 
-        self.resize(600, 600)
+        self.resize(1400, 800)
 
     def _setup_gui(self):
         fbox = gui.widgetBox(self.controlArea, "", orientation=0)
@@ -494,6 +494,8 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.available_indices_model[:] = [index for index in self.indicator_features
                                            if index not in used]
         self.selected_indices_model[:] = self.selected_indicators
+
+        self.selected_years = self.selected_years if len(self.selected_years) > 0 else list(range(10))
         self.fix_redraw()
         self.commit.deferred()
 
@@ -509,7 +511,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self._select_indicator_rows()
 
     def __on_indicator_delete(self, key):
-        if key == Qt.Key_Delete:
+        if key == Qt.Key_Delete or key == Qt.Key_Backspace:
             rows = self.selected_rows(self.selected_indices_view)
             if rows:
                 src_model = source_model(self.selected_indices_view)

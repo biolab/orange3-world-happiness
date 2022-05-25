@@ -105,5 +105,5 @@ class AggregationMethods:
                         if ContinuousVariable(name) in world_data.domain.attributes and not np.isnan(row[name]):
                             values.append(row[name])
                     df.at[country_name, indicator] = agg_functions[agg_method](values) \
-                        if len(values) > 1 else np.nan
+                        if len(values) >= 1 else np.nan
             return table_from_frame(df)

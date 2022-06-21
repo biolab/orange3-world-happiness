@@ -81,7 +81,8 @@ class WorldIndicators:
                 doc['desc'],
                 doc['code_exp'] if 'code_exp' in doc else [],
                 doc['is_relative'] if 'is_relative' in doc else '',
-                doc['url'] if 'url' in doc else ''
+                doc['url'] if 'url' in doc else '',
+                doc['sparse_indicator']
             ]
             out.append(tuple(indic))
         return out

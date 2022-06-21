@@ -75,12 +75,12 @@ def run(
 
     # Add descriptions to indicators
     for attrib in results.domain.attributes:
-        for (db, code, desc, ind_exp, is_rel, url) in indicators:
+        for (db, code, desc, ind_exp, is_rel, url, *_) in indicators:
             if len(ind_exp) > 0:
                 if code in attrib.name:
                     split = code.split(".")
                     attrib.attributes["Description"] = desc
-                    for i in range(len(split)):
+                    for i in range(len(ind_exp)):
                         attrib.attributes[EXP_NAMES[i]] = f"{split[i]} - {ind_exp[i]}"
 
     return results
@@ -300,6 +300,7 @@ class IndicatorFilterProxyModel(QSortFilterProxyModel):
     def __init__(self):
         super(IndicatorFilterProxyModel, self).__init__()
         self.rel_only = False
+        self.rem_sparse = False
         self.and_filter = False
         self._filter_string = ""
 
@@ -309,6 +310,10 @@ class IndicatorFilterProxyModel(QSortFilterProxyModel):
 
     def set_rel(self, x):
         self.rel_only = x
+        self.invalidateFilter()
+
+    def set_sparse(self, x):
+        self.rem_sparse = x
         self.invalidateFilter()
 
     def set_and_filter(self):
@@ -332,7 +337,9 @@ class IndicatorFilterProxyModel(QSortFilterProxyModel):
 
     def filterAcceptsRow(self, source_row, source_parent):
         row = self.sourceModel()[source_row]
-        return self.filter_accepts_row(row) and (not self.rel_only or (self.rel_only and row[4]))
+        return self.filter_accepts_row(row) and \
+               (not self.rel_only or (self.rel_only and row[4])) and \
+               (not self.rem_sparse or (self.rem_sparse and not row[6]))
 
     def sort(self, column: int, order: Qt.SortOrder = Qt.AscendingOrder):
         super().sort(column, order)
@@ -438,6 +445,13 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
             self.__on_indicator_relative_changed
         )
 
+        self.__indicator_sparse_checkbox = QCheckBox("Remove Sparse", self)
+        self.__indicator_sparse_checkbox.setToolTip("Remove very sparse indicators.")
+        self.__indicator_sparse_checkbox.setChecked(False)
+        self.__indicator_sparse_checkbox.stateChanged.connect(
+            self.__on_indicator_relative_changed
+        )
+
         self.__indicator_and_button = gui.button(box, self, "Any", width=50, callback=self.__on_indicator_filter_changed)
         self.__indicator_and_button.adjustSize()
         self.__indicator_and_button.setToolTip("Toggle filtering indicators that include all words.")
@@ -446,6 +460,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         filters_row.layout().addWidget(self.__indicator_filter_line_edit)
         filters_row.layout().addWidget(self.__indicator_and_button)
         filters_row.layout().addWidget(self.__indicator_relative_checkbox)
+        filters_row.layout().addWidget(self.__indicator_sparse_checkbox)
         available_box.layout().addWidget(filters_row)
 
         def dropcompleted(action):
@@ -511,6 +526,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
     def __on_indicator_relative_changed(self):
         model = self.available_indices_view.model()
         model.set_rel(self.__indicator_relative_checkbox.isChecked())
+        model.set_sparse(self.__indicator_sparse_checkbox.isChecked())
         self._select_indicator_rows()
 
     def __on_indicator_delete(self, key):

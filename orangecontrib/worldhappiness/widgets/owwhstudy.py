@@ -69,11 +69,11 @@ def run(
 
     main_df = MONGO_HANDLE.data(countries, indicator_codes, years,
                                 callback=callback, index_freq=index_freq, country_freq=country_freq)
-    results = table_from_frame(main_df)
 
+    results = table_from_frame(main_df)
     results = AggregationMethods.aggregate(results, years, agg_method if len(years) > 1 else 0)
 
-    # Add descriptions to indicators
+    #Add descriptions to indicators
     for attrib in results.domain.attributes:
         for (db, code, desc, ind_exp, is_rel, url, *_) in indicators:
             if len(ind_exp) > 0:
@@ -81,8 +81,7 @@ def run(
                     split = code.split(".")
                     attrib.attributes["Description"] = desc
                     for i in range(len(ind_exp)):
-                        attrib.attributes[EXP_NAMES[i]] = f"{split[i]} - {ind_exp[i]}"
-
+                        attrib.attributes[EXP_NAMES[min(i, len(EXP_NAMES)-1)]] = f"{split[i]} - {ind_exp[i]}"
     return results
 
 
@@ -396,21 +395,21 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         vbox.layout().addLayout(grid)
         spin_box = gui.vBox(vbox, "Indicator frequency (%)")
         grid.addWidget(spin_box, alignment=Qt.AlignLeft)
-        spin_box.setFixedWidth(grid.sizeHint().width())
+        spin_box.setFixedWidth(175)
         gui.spin(spin_box, self, 'indicator_freq', minv=1, maxv=100,
                  callback=self.__on_dummy_change,
                  tooltip="Percentage of received values to keep indicator."
                  )
         cspin_box = gui.vBox(vbox, "Country frequency (%)")
         grid.addWidget(cspin_box, alignment=Qt.AlignLeft)
-        cspin_box.setFixedWidth(grid.sizeHint().width())
+        cspin_box.setFixedWidth(175)
         gui.spin(cspin_box, self, 'country_freq', minv=1, maxv=100,
                  callback=self.__on_dummy_change,
                  tooltip="Percentage of received values to keep country.")
 
         agg_box = gui.vBox(vbox, "Aggreagtion by year")
         grid.addWidget(agg_box, alignment=Qt.AlignLeft)
-        agg_box.setFixedWidth(grid.sizeHint().width())
+        agg_box.setFixedWidth(175)
         gui.comboBox(agg_box, self, 'agg_method', items=AggregationMethods.ITEMS,
                      callback=self.__on_dummy_change)
 

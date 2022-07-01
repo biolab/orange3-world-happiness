@@ -71,17 +71,18 @@ def run(
                                 callback=callback, index_freq=index_freq, country_freq=country_freq)
 
     results = table_from_frame(main_df)
-    results = AggregationMethods.aggregate(results, years, agg_method if len(years) > 1 else 0)
+    results = AggregationMethods.aggregate(results, agg_method if len(years) > 1 else 0)
 
-    #Add descriptions to indicators
-    for attrib in results.domain.attributes:
-        for (db, code, desc, ind_exp, is_rel, url, *_) in indicators:
-            if len(ind_exp) > 0:
+    # Add descriptions to indicators
+    if results:
+        for attrib in results.domain.attributes:
+            for (db, code, desc, ind_exp, is_rel, url, *_) in indicators:
                 if code in attrib.name:
-                    split = code.split(".")
                     attrib.attributes["Description"] = desc
-                    for i in range(len(ind_exp)):
-                        attrib.attributes[EXP_NAMES[min(i, len(EXP_NAMES)-1)]] = f"{split[i]} - {ind_exp[i]}"
+                    if len(ind_exp) > 0:
+                        split = code.split(".")
+                        for i in range(len(ind_exp)):
+                            attrib.attributes[EXP_NAMES[min(i, len(EXP_NAMES)-1)]] = f"{split[i]} - {ind_exp[i]}"
     return results
 
 

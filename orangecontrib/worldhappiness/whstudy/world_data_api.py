@@ -5,23 +5,30 @@
 # Author: Nejc Hirci
 # -----------------------------------------------------------
 
-from pprint import pprint
+
 import wbgapi as wb
+import json
+import numpy as np
 import pandas as pd
-from pymongo import MongoClient, ReplaceOne
-from Orange.util import dummy_callback
+from requests import HTTPError
+
 import datetime
+from pymongo import MongoClient
+from Orange.util import dummy_callback
 
 MONGODB_HOST = 'cluster0.vxftj.mongodb.net'
 MONGODB_PORT = 27017
 DB_NAME = 'world-database'
 
 
-def find_country_name(code):
-    economy = list(wb.economy.list(code))
-    if len(economy) == 0:
-        raise ValueError(f"Invalid country code {code}.")
-    return economy[0]['value']
+def find_country_name(name):
+    # Needed only for update not addon
+    return name
+
+
+def find_country_alpha2(name):
+    # Needed only for update not addon
+    return name
 
 
 def find_indicator_desc(code, db):
@@ -87,13 +94,13 @@ class WorldIndicators:
             out.append(tuple(indic))
         return out
 
-    def data(self, countries, indicators, year,
-             include_country_names=True, callback=dummy_callback, index_freq=0, country_freq=0):
+    def data(self, countries, indicators, year, include_country_names=True, callback=dummy_callback, index_freq=0,
+             country_freq=0):
         """ Function gets data from local database.
         :param country_freq: percentage of not NaN values to keep country
         :param index_freq: percentage of not NaN values to keep indicator
         :param callback: callback function
-        :param include_country_names: add collumn with country names
+        :param include_country_names: add collumn with country names                               
         :param countries: list of country codes
         :type countries: list
         :param indicators: list of indicator codes
@@ -135,6 +142,7 @@ class WorldIndicators:
             query_filter[f'indicators.{code}'] = 1
 
         # Fill Dataframe from local database
+
         collection = self.db.countries
         for country in countries:
             doc = collection.find_one({"_id": country}, query_filter)
@@ -143,21 +151,30 @@ class WorldIndicators:
             for i in indicators:
                 # Must change indicator code to underscores because of Mongo naming restrictions
                 code = str.replace(i, '.', '_')
+                get_last_available_year = True
                 if code in doc['indicators']:
                     values = doc['indicators'][code]
                     if len(year) > 1:
                         for y in year:
                             if str(y) in values:
                                 df.at[doc['_id'], f"{y}-{i}"] = values[str(y)]
+                                get_last_available_year = False
                     else:
                         if str(year[0]) in values:
                             df.at[doc['_id'], i] = values[str(year[0])]
+                            get_last_available_year = False
+
+                    if get_last_available_year and len(values) > 0:
+                        last_year = list(values.keys())[-1]
+                        df.at[doc['_id'], f"{i}"] = values[str(last_year)]
             callback(step / steps)
             step += 1
 
-        min_count = len(df) * index_freq * 0.01
+        # Remove indicator based on percantage of NaN countries
+        min_count = len(countries) * index_freq * 0.01
         df = df.dropna(thresh=min_count, axis=1)
 
+        # Remove country based on percentage of NaN indicators                                                      
         min_count = len(df.columns) * country_freq * 0.01
         df = df.dropna(thresh=min_count, axis=0)
 
@@ -179,22 +196,23 @@ class WorldIndicators:
         if type(years) is int:
             years = [years]
 
-        # Create indicator documents if they don't exist
-        for code in indicators:
-            indic_code = str.replace(code, ".", "_")
-            if db == 'WDI' and len(list(self.db.indicators.find({"_id": indic_code}).limit(1))) == 0:
-                desc = find_indicator_desc(code, db)
-                doc = {
-                    "_id": indic_code,
-                    "desc": desc,
-                    "is_relative": '%' in desc,
-                    "db": db,
-                    "url": f"https://data.worldbank.org/indicator/{code}" if db == 'WDI' else None
-                }
-                self.db.indicators.insert_one(doc)
-
         if db == 'WDI':
             wb.db = 2  # Set to WBD/WDI
+
+            # Create indicator documents if they don't exist
+            for code in indicators:
+                indic_code = str.replace(code, ".", "_")
+                if len(list(self.db.indicators.find({"_id": indic_code}).limit(1))) == 0:
+                    desc = find_indicator_desc(code, db)
+                    doc = {
+                        "_id": indic_code,
+                        "db": db,
+                        "code_exp": [],
+                        "desc": desc,
+                        "is_relative": '%' in desc,
+                        "url": f"https://data.worldbank.org/indicator/{code}"
+                    }
+                    self.db.indicators.insert_one(doc)
 
             # For performance reasons split queries on countries and limit to 200 indicators per query
             for country_code in countries:
@@ -208,9 +226,9 @@ class WorldIndicators:
                     }
 
                 for i in range(0, len(indicators), 200):
-                    print(f"[{datetime.datetime.now()}] Updating indicators {i}:{i+200} for " +
+                    print(f"[{datetime.datetime.now()}] Updating indicators {i}:{i + 200} for " +
                           f"{doc['name']}")
-                    wb_data = wb.data.DataFrame(indicators[i:i+200], economy=country_code, time=years)
+                    wb_data = wb.data.DataFrame(indicators[i:i + 200], economy=country_code, time=years)
                     wb_data.reset_index(inplace=True)
                     data_dict = wb_data.to_dict("records")
 
@@ -277,6 +295,155 @@ class WorldIndicators:
                         self.db.countries.replace_one({"_id": country_code}, doc)
                     else:
                         f"Skipping {country_key} beacuse missing in file."
+
+        elif db == 'OECD':
+            # Instead of list of indicator codes we are sending full_documents
+
+            # Create indicator documents if they don't exist
+            for document in indicators:
+                indic_code = str.replace(document['_id'], ".", "_")
+                if len(list(self.db.indicators.find({"_id": indic_code}).limit(1))) == 0:
+                    doc = {
+                        "_id": indic_code,
+                        "db": document['db'],
+                        "code_exp": document['code_exp'],
+                        "desc": document['desc'],
+                        "is_relative": False,
+                        "url": None
+                    }
+                    self.db.indicators.insert_one(doc)
+
+            countries_str = "+".join(countries)
+
+            # Get the requested data with pandasdmx
+            uis = sdmx.Request('OECD')
+            big_df = None
+
+            for doc in indicators:
+                dataset_id = doc['db'].split("_")[0]
+                try:
+                    oecd_data = uis.data(
+                        resource_id=dataset_id,
+                        key=f"{countries_str}.{doc['query_code']}",
+                        params={"startTime": years[-1], "endTime": years[0]}
+                    )
+                    series = sdmx.to_pandas(oecd_data)
+                    series = series.droplevel([1, 3, 4, 5, 6])
+                    if big_df is None:
+                        big_df = pd.DataFrame(series)
+                    else:
+                        big_df = pd.concat([big_df, pd.DataFrame(series)])
+
+                except HTTPError:
+                    print("No Results found for: ", dataset_id)
+                    print(f"\t {countries_str}")
+                    print(f"\t {doc['query_code']}")
+
+            # Next we will load the data to database
+            for country_code in countries:
+                doc = self.db.countries.find_one({"_id": country_code})
+
+                if doc is not None:
+                    num = 0
+                    for indic_doc in indicators:
+                        ref_indic_code = indic_doc['query_code'].split(".")[1]
+                        indic_code = indic_doc['_id']
+
+                        if indic_code in doc['indicators']:
+                            indic = doc['indicators'][indic_code]
+                        else:
+                            doc['indicators'][indic_code] = {}
+                            indic = doc['indicators'][indic_code]
+
+                        y_count = 0
+                        for year in years:
+                            try:
+                                val_loc = big_df.loc[country_code, ref_indic_code, str(year)]
+                                indic.update({str(year): val_loc.values[0][0]})
+                                y_count += 1
+                            except KeyError:
+                                pass
+                        num += (1 < y_count)
+                    print(f"Updated {num}/{len(indicators)} indicators for {country_code}")
+
+                    # Update document in remote mongo database
+                    result = self.db.countries.replace_one({"_id": country_code}, doc)
+                    print("Data replaced with id", result)
+
+        elif db == 'EVS/WVS':
+            # Indicator includes code and description
+            # Create indicator documents if they don't exist
+            for indic in indicators:
+                # Create normal indicator and weighted indicator
+                indic_code = str.replace(indic['table_name'], ".", "_")
+                if len(list(self.db.indicators.find({"_id": indic_code}).limit(1))) == 0:
+                    doc = {
+                        "_id": indic_code,
+                        "db": db,
+                        "code_exp": [],
+                        "desc": indic['desc'],
+                        "is_relative": True,
+                        "url": "",
+                        "sparse_indicator": False
+                    }
+                    self.db.indicators.insert_one(doc)
+
+            for country_code in countries:
+                alpha2_code = find_country_alpha2(country_code)
+                doc = self.db.countries.find_one({"_id": country_code})
+
+                if doc is None:
+                    doc = {
+                        "_id": country_code,
+                        "name": find_country_name(country_code),
+                        "indicators": {}
+                    }
+
+                # Load data from csv
+                evs_wvs_data = pd.read_csv('../data/evs/EVS_WVS_Joint_csv_v3_0.csv', low_memory=False)
+                base_countries = evs_wvs_data['cntry_AN'].to_numpy().flatten()
+                unique_countries, idx = np.unique(base_countries, return_index=True)
+                country_list = base_countries[np.sort(idx)]
+
+                if alpha2_code in country_list:
+                    country_df = evs_wvs_data[evs_wvs_data['cntry_AN'] == alpha2_code]
+                    # Get year of country
+                    year = list(country_df['year'])[0]
+
+                    for indic in indicators:
+                        indic_key = indic['table_name']
+                        indicator_code = str.replace(indic_key, '.', '_')
+                        if indicator_code in doc['indicators']:
+                            indic_doc = doc['indicators'][indicator_code]
+                        else:
+                            doc['indicators'][indicator_code] = {}
+                            indic_doc = doc['indicators'][indicator_code]
+
+                        weighted = False
+                        if indic_key[-2:] == '_W':
+                            weighted = True
+                            indic_key = indic_key[:-2]
+
+                        indic_data = country_df[indic_key]
+                        gwght_weights = country_df['gwght']
+
+                        if indic_data.dtypes == 'int64' or indic_data.dtypes == 'float64':
+                            if weighted:
+                                weighted_data = indic_data * gwght_weights
+                                calc_avg = weighted_data.loc[weighted_data >= 0].mean()
+                            else:
+                                calc_avg = indic_data.loc[indic_data >= 0].mean()
+                            indic_doc.update({str(year): float(calc_avg)})
+                        else:
+                            print(f"Indicator {indic_key} is not a value!")
+
+                    # Update document in remote mongo database
+                    print(f"Completed country {country_code} {year}")
+                    self.db.countries.replace_one({"_id": country_code}, doc)
+                else:
+                    f"Skipping {country_code} beacuse missing in file."
+
+            print("FINISHED")
 
 
 if __name__ == "__main__":

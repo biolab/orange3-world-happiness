@@ -166,7 +166,10 @@ class WorldIndicators:
 
                     if get_last_available_year and len(values) > 0:
                         last_year = list(values.keys())[-1]
-                        df.at[doc['_id'], f"{i}"] = values[str(last_year)]
+                        name = i
+                        if year is list:
+                            name = f"{last_year}-{i}"
+                        df.at[doc['_id'], name] = values[str(last_year)]
             callback(step / steps)
             step += 1
 

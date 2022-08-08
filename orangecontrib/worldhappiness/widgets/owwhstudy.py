@@ -67,8 +67,8 @@ def run(
 
     indicator_codes = [code for (_, code, desc, *other) in indicators]
 
-    main_df = MONGO_HANDLE.data(countries, indicator_codes, years,
-                                callback=callback, index_freq=index_freq, country_freq=country_freq)
+    main_df = MONGO_HANDLE.data(countries, indicator_codes, years, callback=callback,
+                                index_freq=index_freq, country_freq=country_freq)
 
     results = table_from_frame(main_df)
     results = AggregationMethods.aggregate(results, agg_method if len(years) > 1 else 0)
@@ -499,12 +499,13 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.available_indices_view.resizeColumnToContents(0)
         self.available_indices_view.resizeColumnToContents(1)
 
-        self.selected_indices_view.setColumnWidth(0, self.available_indices_view.columnWidth(0))
-        self.selected_indices_view.setColumnWidth(1, self.available_indices_view.columnWidth(1))
+        self.selected_indices_view.resizeColumnToContents(0)
+        self.selected_indices_view.resizeColumnToContents(1)
 
         # Hide all collumns used in hover and etc.
         for i in range(3, self.available_indices_view.model().columnCount()):
             self.available_indices_view.setColumnHidden(i, True)
+        for i in range(3, self.selected_indices_view.model().columnCount()):
             self.selected_indices_view.setColumnHidden(i, True)
 
     def initial_indices_update(self):
@@ -552,6 +553,8 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
                 dst_model.extend(indics)
 
                 self.commit.deferred()
+
+                self.fix_redraw()
 
     def __on_dummy_change(self):
         self.commit.deferred()

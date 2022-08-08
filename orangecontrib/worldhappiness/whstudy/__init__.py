@@ -6,7 +6,7 @@ import numpy as np
 import re
 
 import pandas as pd
-from Orange.data import *
+from Orange.data import Table, table_from_frame, ContinuousVariable
 
 
 from orangecontrib.worldhappiness.whstudy.world_data_api import WorldIndicators
@@ -59,11 +59,11 @@ class AggregationMethods:
 
     @staticmethod
     def aggregate(
-            world_data,
-            indicators,
+            world_data: Table,
+            agg_method: int,
+            callback,
             index_freq=1,
             country_freq=1,
-            agg_method=NONE
     ) -> Table:
         """
         Aggregate scores.
@@ -72,46 +72,52 @@ class AggregationMethods:
         ----------
         world_data : Table
             Table with data of countries for each indicator and year
-        indicators : list
-            List of indicators in table
-        country_freq: float
-            Percentage of not NaN values to keep country
-        index_freq : float
-            Percentage of not NaN values to keep indicator
         agg_method : int
             Method type. One of: MEAN, MEDIAN, MIN, MAX.
+        country_freq: float
+            Percentage of not NaN values to keep country
+        index_freq: float
+            Percentage of not NaN values to keep indicator
+        callback: callback function
 
         Returns
         -------
         Aggregated indicator values by year.
         """
-        if len(world_data.domain) > 2:
-            agg_functions = ['0', 'mean', 'median', 'max', 'min']
-            data_df, _, m_df = world_data.to_pandas_dfs()
+        agg_functions = [0, np.nanmean, np.nanmedian, np.nanmax, np.nanmin]
 
-            if agg_method == AggregationMethods.NONE:
-                return world_data
-            else:
-                df = pd.DataFrame(data=None, index=list(m_df['Country code']), dtype=float)
-                col_cutof = max(df.shape[0] * index_freq * 0.01, 1)
-                row_cutof = max(df.shape[1] * index_freq * 0.01, 2)
-
-                col_list = []
-
-                for (_, code, *_) in reversed(indicators):
-                    selection = data_df.filter(like=code, axis=1)
-                    aggregations = selection.agg(agg_functions[agg_method], axis="columns")
-
-                    # Keep indicator based on percantage of NaN countries
-                    if aggregations.count() >= col_cutof:
-                        col_list.append(aggregations)
-
-                if m_df.shape[1] > 1:
-                    df.insert(loc=0, column='Country name', value=list(m_df['Country name']))
-
-                # Remove country based on percentage of NaN indicators
-                df = df.dropna(thresh=row_cutof, axis=0)
-
-                return table_from_frame(df)
-        else:
+        if agg_method == AggregationMethods.NONE:
             return world_data
+        else:
+            callback(0.8, 'Aggregating data ...')
+            x_df, _, m_df = world_data.to_pandas_dfs()
+            cols = []
+            for i in world_data.domain.attributes:
+                name = i.name.split('-')[1]
+                if name not in cols:
+                    cols.append(name)
+
+            countries = list(m_df['Country code'])
+            df = pd.DataFrame(data=None, index=countries, columns=cols, dtype=float)
+
+            row_count = world_data.X_df.shape[0]
+            for step in range(row_count):
+                callback(0.8 + 0.2 * step / row_count, 'Aggregating data ...')
+                ind_step = 0
+                for indicator in cols:
+                    selection = x_df.iloc[step, :].filter(regex=indicator)
+                    df.iloc[step, ind_step] = selection.agg(agg_functions[agg_method])
+                    ind_step += 1
+
+            if m_df.shape[1] > 1:
+                df.insert(loc=0, column='Country name', value=list(m_df['Country name']))
+
+            # Remove indicator based on percantage of NaN countries
+            min_count = max(row_count * index_freq * 0.01, 1)
+            df = df.dropna(thresh=min_count, axis=1)
+
+            # Remove country based on percentage of NaN indicators
+            min_count = max(len(cols) * country_freq * 0.01, 2)
+            df = df.dropna(thresh=min_count, axis=0)
+
+            return table_from_frame(df)

@@ -131,7 +131,7 @@ class WorldIndicators:
         if include_country_names:
             df = df.astype({"Country name": str})
 
-        steps = len(countries)
+        steps = len(countries) * len(indicators)
         step = 1
 
         callback(0, "Fetching data ...")
@@ -170,15 +170,16 @@ class WorldIndicators:
                         if type(year) is list:
                             name = f"{last_year}-{i}"
                         df.at[doc['_id'], name] = values[str(last_year)]
-            callback(step / steps)
-            step += 1
+
+                callback(step / steps * 0.8, "Fetching data ...")
+                step += 1
 
         # Remove indicator based on percantage of NaN countries
-        min_count = len(countries) * index_freq * 0.01
+        min_count = max(len(countries) * index_freq * 0.01, 1)
         df = df.dropna(thresh=min_count, axis=1)
 
         # Remove country based on percentage of NaN indicators                                                      
-        min_count = len(df.columns) * country_freq * 0.01
+        min_count = max(len(df.columns) * country_freq * 0.01, 1)
         df = df.dropna(thresh=min_count, axis=0)
 
         return df

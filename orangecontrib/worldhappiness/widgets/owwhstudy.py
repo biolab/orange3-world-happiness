@@ -71,7 +71,8 @@ def run(
                                 index_freq=index_freq, country_freq=country_freq)
 
     results = table_from_frame(main_df)
-    results = AggregationMethods.aggregate(results, agg_method if len(years) > 1 else 0)
+    results = AggregationMethods.aggregate(results, agg_method=agg_method if len(years) > 1 else 0,
+                                           index_freq=index_freq, country_freq=country_freq, callback=callback)
 
     # Add descriptions to indicators
     if results:
@@ -428,6 +429,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.country_tree.setHeaderLabels(['Countries'])
         box.layout().addWidget(self.country_tree)
         self.country_tree.itemChanged.connect(self.country_checked)
+        self.country_tree.itemClicked.connect(self.__on_dummy_change)
 
         bbox = gui.vBox(controls_box)
         gui.auto_send(bbox, self, "auto_apply")
@@ -496,11 +498,10 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.mainArea.layout().addWidget(splitter)
 
     def fix_redraw(self):
-        self.available_indices_view.resizeColumnToContents(0)
-        self.available_indices_view.resizeColumnToContents(1)
-
-        self.selected_indices_view.resizeColumnToContents(0)
-        self.selected_indices_view.resizeColumnToContents(1)
+        self.available_indices_view.setColumnWidth(0, 47)
+        self.available_indices_view.setColumnWidth(1, 142)
+        self.selected_indices_view.setColumnWidth(0, 47)
+        self.selected_indices_view.setColumnWidth(1, 142)
 
         # Hide all collumns used in hover and etc.
         for i in range(3, self.available_indices_view.model().columnCount()):
@@ -586,7 +587,6 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
                 self.selected_countries.add(item.country_code)
             else:
                 self.selected_countries.discard(item.country_code)
-            self.commit.deferred()
 
     def _clear(self):
         self.clear_messages()

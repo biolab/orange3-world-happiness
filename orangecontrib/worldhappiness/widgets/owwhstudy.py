@@ -575,15 +575,16 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
 
     @Inputs.indicators
     def set_inputs(self, inputs: Optional[Table]):
-        input_indicators = []
-        for col in inputs.domain:
-            if isinstance(col, ContinuousVariable) and not re.match(r'\d+-.*', col.name):
-                indicator = [ind for ind in self.indicator_features if ind[1] == col.name]
-                if indicator:
-                    input_indicators.extend(indicator)
-        if 0 < len(input_indicators):
-            self.selected_indicators = input_indicators
-            self.initial_indices_update()
+        if inputs is not None and inputs.domain is not None:
+            input_indicators = []
+            for col in inputs.domain:
+                if isinstance(col, ContinuousVariable) and not re.match(r'\d+-.*', col.name):
+                    indicator = [ind for ind in self.indicator_features if ind[1] == col.name]
+                    if indicator:
+                        input_indicators.extend(indicator)
+            if 0 < len(input_indicators):
+                self.selected_indicators = input_indicators
+                self.initial_indices_update()
 
     @gui.deferred
     def commit(self):

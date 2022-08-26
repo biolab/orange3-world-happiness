@@ -10,7 +10,7 @@ with io.open('README.pypi', 'r', encoding='utf-8') as f:
 
 NAME = "Orange3-WorldHappiness"
 
-VERSION = "0.1.7"
+VERSION = "0.1.8"
 
 AUTHOR = 'Bioinformatics Laboratory, FRI UL'
 AUTHOR_EMAIL = 'contact@orange.biolab.si'

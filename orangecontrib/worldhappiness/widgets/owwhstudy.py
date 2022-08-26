@@ -1,4 +1,5 @@
-from typing import Any, Set
+import re
+from typing import Any, Set, Optional
 from functools import partial
 
 from AnyQt.QtCore import Qt, Signal, QSortFilterProxyModel, QItemSelection, QItemSelectionModel, \
@@ -13,7 +14,7 @@ from Orange.widgets.utils.itemmodels import PyTableModel
 from Orange.widgets.utils.listfilter import (
     slices, delslice
 )
-from Orange.widgets.widget import OWWidget, Output
+from Orange.widgets.widget import OWWidget, Output, Input
 from Orange.widgets import gui
 
 from orangecontrib.worldhappiness.whstudy import *
@@ -360,6 +361,9 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
     auto_apply: bool = Setting(True)
     splitter_state: bytes = Setting(b'')
 
+    class Inputs:
+        indicators = Input("Indicators", Table)
+
     class Outputs:
         world_data = Output("World data", Table)
 
@@ -568,6 +572,18 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
 
     def on_partial_result(self, result: Any) -> None:
         pass
+
+    @Inputs.indicators
+    def set_inputs(self, inputs: Optional[Table]):
+        input_indicators = []
+        for col in inputs.domain:
+            if isinstance(col, ContinuousVariable) and not re.match(r'\d+-.*', col.name):
+                indicator = [ind for ind in self.indicator_features if ind[1] == col.name]
+                if indicator:
+                    input_indicators.extend(indicator)
+        if 0 < len(input_indicators):
+            self.selected_indicators = input_indicators
+            self.initial_indices_update()
 
     @gui.deferred
     def commit(self):

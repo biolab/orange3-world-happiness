@@ -1,12 +1,11 @@
-import re
 from typing import Any, Set, Optional
-from functools import partial
 
 from AnyQt.QtCore import Qt, Signal, QSortFilterProxyModel, QItemSelection, QItemSelectionModel, \
-    QTimer, QModelIndex, QMimeData
+    QModelIndex, QMimeData
 from AnyQt.QtWidgets import QLineEdit, \
-    QTableView, QListView, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QCheckBox, QSplitter, QVBoxLayout
-from AnyQt.QtGui import QDrag
+    QTableView, QListView, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QCheckBox, QSplitter, QVBoxLayout, \
+    QApplication
+from AnyQt.QtGui import QDrag, QClipboard
 
 from Orange.widgets.settings import Setting
 from Orange.widgets.utils.concurrent import ConcurrentWidgetMixin, TaskState
@@ -14,6 +13,7 @@ from Orange.widgets.utils.itemmodels import PyTableModel
 from Orange.widgets.utils.listfilter import (
     slices, delslice
 )
+from Orange.widgets.utils.tableview import table_selection_to_mime_data
 from Orange.widgets.widget import OWWidget, Output, Input
 from Orange.widgets import gui
 
@@ -198,7 +198,6 @@ class IndicatorTableView(QTableView):
     def keyPressEvent(self, event):
         super().keyPressEvent(event)
         self.keyPressed.emit(event.key())
-
 
 class IndicatorTableModel(PyTableModel):
     """
@@ -572,6 +571,17 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
 
     def on_partial_result(self, result: Any) -> None:
         pass
+
+    def copy_to_clipboard(self):
+        self.copyRow()
+
+    def copyRow(self):
+        mime_available = table_selection_to_mime_data(self.available_indices_view)
+        mime_selected = table_selection_to_mime_data(self.selected_indices_view)
+        if mime_available.text():
+            QApplication.clipboard().setMimeData(mime_available, QClipboard.Clipboard)
+        elif mime_selected.text():
+            QApplication.clipboard().setMimeData(mime_selected, QClipboard.Clipboard)
 
     @Inputs.indicators
     def set_inputs(self, inputs: Optional[Table]):

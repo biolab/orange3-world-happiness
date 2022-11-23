@@ -1,11 +1,11 @@
-from typing import Any, Set
-from functools import partial
+from typing import Any, Set, Optional
 
 from AnyQt.QtCore import Qt, Signal, QSortFilterProxyModel, QItemSelection, QItemSelectionModel, \
-    QTimer, QModelIndex, QMimeData
+    QModelIndex, QMimeData
 from AnyQt.QtWidgets import QLineEdit, \
-    QTableView, QListView, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QCheckBox, QSplitter, QVBoxLayout
-from AnyQt.QtGui import QDrag
+    QTableView, QListView, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QCheckBox, QSplitter, QVBoxLayout, \
+    QApplication
+from AnyQt.QtGui import QDrag, QClipboard
 
 from Orange.widgets.settings import Setting
 from Orange.widgets.utils.concurrent import ConcurrentWidgetMixin, TaskState
@@ -13,7 +13,8 @@ from Orange.widgets.utils.itemmodels import PyTableModel
 from Orange.widgets.utils.listfilter import (
     slices, delslice
 )
-from Orange.widgets.widget import OWWidget, Output
+from Orange.widgets.utils.tableview import table_selection_to_mime_data
+from Orange.widgets.widget import OWWidget, Output, Input
 from Orange.widgets import gui
 
 from orangecontrib.worldhappiness.whstudy import *
@@ -67,22 +68,23 @@ def run(
 
     indicator_codes = [code for (_, code, desc, *other) in indicators]
 
-    main_df = MONGO_HANDLE.data(countries, indicator_codes, years,
-                                callback=callback, index_freq=index_freq, country_freq=country_freq)
-    results = table_from_frame(main_df)
+    main_df = MONGO_HANDLE.data(countries, indicator_codes, years, callback=callback,
+                                index_freq=index_freq, country_freq=country_freq)
 
-    results = AggregationMethods.aggregate(results, years, agg_method if len(years) > 1 else 0)
+    results = table_from_frame(main_df)
+    results = AggregationMethods.aggregate(results, agg_method=agg_method if len(years) > 1 else 0,
+                                           index_freq=index_freq, country_freq=country_freq, callback=callback)
 
     # Add descriptions to indicators
-    for attrib in results.domain.attributes:
-        for (db, code, desc, ind_exp, is_rel, url, *_) in indicators:
-            if len(ind_exp) > 0:
+    if results:
+        for attrib in results.domain.attributes:
+            for (db, code, desc, ind_exp, is_rel, url, *_) in indicators:
                 if code in attrib.name:
-                    split = code.split(".")
                     attrib.attributes["Description"] = desc
-                    for i in range(len(ind_exp)):
-                        attrib.attributes[EXP_NAMES[i]] = f"{split[i]} - {ind_exp[i]}"
-
+                    if len(ind_exp) > 0:
+                        split = code.split(".")
+                        for i in range(len(ind_exp)):
+                            attrib.attributes[EXP_NAMES[min(i, len(EXP_NAMES)-1)]] = f"{split[i]} - {ind_exp[i]}"
     return results
 
 
@@ -196,7 +198,6 @@ class IndicatorTableView(QTableView):
     def keyPressEvent(self, event):
         super().keyPressEvent(event)
         self.keyPressed.emit(event.key())
-
 
 class IndicatorTableModel(PyTableModel):
     """
@@ -359,6 +360,9 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
     auto_apply: bool = Setting(False)
     splitter_state: bytes = Setting(b'')
 
+    class Inputs:
+        indicators = Input("Indicators", Table)
+
     class Outputs:
         world_data = Output("World data", Table)
 
@@ -396,21 +400,21 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         vbox.layout().addLayout(grid)
         spin_box = gui.vBox(vbox, "Indicator frequency (%)")
         grid.addWidget(spin_box, alignment=Qt.AlignLeft)
-        spin_box.setFixedWidth(grid.sizeHint().width())
+        spin_box.setFixedWidth(175)
         gui.spin(spin_box, self, 'indicator_freq', minv=1, maxv=100,
                  callback=self.__on_dummy_change,
                  tooltip="Percentage of received values to keep indicator."
                  )
         cspin_box = gui.vBox(vbox, "Country frequency (%)")
         grid.addWidget(cspin_box, alignment=Qt.AlignLeft)
-        cspin_box.setFixedWidth(grid.sizeHint().width())
+        cspin_box.setFixedWidth(175)
         gui.spin(cspin_box, self, 'country_freq', minv=1, maxv=100,
                  callback=self.__on_dummy_change,
                  tooltip="Percentage of received values to keep country.")
 
         agg_box = gui.vBox(vbox, "Aggreagtion by year")
         grid.addWidget(agg_box, alignment=Qt.AlignLeft)
-        agg_box.setFixedWidth(grid.sizeHint().width())
+        agg_box.setFixedWidth(175)
         gui.comboBox(agg_box, self, 'agg_method', items=AggregationMethods.ITEMS,
                      callback=self.__on_dummy_change)
 
@@ -428,6 +432,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.country_tree.setHeaderLabels(['Countries'])
         box.layout().addWidget(self.country_tree)
         self.country_tree.itemChanged.connect(self.country_checked)
+        self.country_tree.itemClicked.connect(self.__on_dummy_change)
 
         bbox = gui.vBox(controls_box)
         gui.auto_send(bbox, self, "auto_apply")
@@ -500,15 +505,15 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.mainArea.layout().addWidget(splitter)
 
     def fix_redraw(self):
-        self.available_indices_view.resizeColumnToContents(0)
-        self.available_indices_view.resizeColumnToContents(1)
-
-        self.selected_indices_view.resizeColumnToContents(0)
-        self.selected_indices_view.resizeColumnToContents(1)
+        self.available_indices_view.setColumnWidth(0, 47)
+        self.available_indices_view.setColumnWidth(1, 142)
+        self.selected_indices_view.setColumnWidth(0, 47)
+        self.selected_indices_view.setColumnWidth(1, 142)
 
         # Hide all collumns used in hover and etc.
         for i in range(3, self.available_indices_view.model().columnCount()):
             self.available_indices_view.setColumnHidden(i, True)
+        for i in range(3, self.selected_indices_view.model().columnCount()):
             self.selected_indices_view.setColumnHidden(i, True)
 
         self.available_box.setTitle(f'Available Indicators     '
@@ -570,6 +575,8 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
 
                 self.commit.deferred()
 
+                self.fix_redraw()
+
     def __on_dummy_change(self):
         self.commit.deferred()
 
@@ -581,6 +588,30 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
 
     def on_partial_result(self, result: Any) -> None:
         pass
+
+    def copy_to_clipboard(self):
+        self.copyRow()
+
+    def copyRow(self):
+        mime_available = table_selection_to_mime_data(self.available_indices_view)
+        mime_selected = table_selection_to_mime_data(self.selected_indices_view)
+        if mime_available.text():
+            QApplication.clipboard().setMimeData(mime_available, QClipboard.Clipboard)
+        elif mime_selected.text():
+            QApplication.clipboard().setMimeData(mime_selected, QClipboard.Clipboard)
+
+    @Inputs.indicators
+    def set_inputs(self, inputs: Optional[Table]):
+        if inputs is not None and inputs.domain is not None:
+            input_indicators = []
+            for col in inputs.domain:
+                if isinstance(col, ContinuousVariable) and not re.match(r'\d+-.*', col.name):
+                    indicator = [ind for ind in self.indicator_features if ind[1] == col.name]
+                    if indicator:
+                        input_indicators.extend(indicator)
+            if 0 < len(input_indicators):
+                self.selected_indicators = input_indicators
+                self.initial_indices_update()
 
     @gui.deferred
     def commit(self):
@@ -600,7 +631,6 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
                 self.selected_countries.add(item.country_code)
             else:
                 self.selected_countries.discard(item.country_code)
-            self.commit.deferred()
 
     def _clear(self):
         self.clear_messages()

@@ -60,8 +60,10 @@ class AggregationMethods:
     @staticmethod
     def aggregate(
             world_data: Table,
-            years: List,
-            agg_method: int
+            agg_method: int,
+            callback,
+            index_freq=1,
+            country_freq=1,
     ) -> Table:
         """
         Aggregate scores.
@@ -70,10 +72,13 @@ class AggregationMethods:
         ----------
         world_data : Table
             Table with data of countries for each indicator and year
-        years : List
-            List of years in results
         agg_method : int
             Method type. One of: MEAN, MEDIAN, MIN, MAX.
+        country_freq: float
+            Percentage of not NaN values to keep country
+        index_freq: float
+            Percentage of not NaN values to keep indicator
+        callback: callback function
 
         Returns
         -------
@@ -84,26 +89,35 @@ class AggregationMethods:
         if agg_method == AggregationMethods.NONE:
             return world_data
         else:
+            callback(0.8, 'Aggregating data ...')
+            x_df, _, m_df = world_data.to_pandas_dfs()
             cols = []
             for i in world_data.domain.attributes:
                 name = i.name.split('-')[1]
                 if name not in cols:
                     cols.append(name)
 
-            countries = list(world_data.metas_df.iloc[:, 0])
+            countries = list(m_df['Country code'])
             df = pd.DataFrame(data=None, index=countries, columns=cols, dtype=float)
 
-            if world_data.metas.shape[1] > 1:
-                df.insert(loc=1, column='Country name', value=list(world_data.metas_df.iloc[:, 1]))
-
-            for row in world_data:
-                country_name = row.metas[0]
+            row_count = world_data.X_df.shape[0]
+            for step in range(row_count):
+                callback(0.8 + 0.2 * step / row_count, 'Aggregating data ...')
+                ind_step = 0
                 for indicator in cols:
-                    values = []
-                    for year in years:
-                        name = f"{year}-{indicator}"
-                        if ContinuousVariable(name) in world_data.domain.attributes and not np.isnan(row[name]):
-                            values.append(row[name])
-                    df.at[country_name, indicator] = agg_functions[agg_method](values) \
-                        if len(values) >= 1 else np.nan
+                    selection = x_df.iloc[step, :].filter(regex=indicator)
+                    df.iloc[step, ind_step] = selection.agg(agg_functions[agg_method])
+                    ind_step += 1
+
+            if m_df.shape[1] > 1:
+                df.insert(loc=0, column='Country name', value=list(m_df['Country name']))
+
+            # Remove indicator based on percantage of NaN countries
+            min_count = max(row_count * index_freq * 0.01, 1)
+            df = df.dropna(thresh=min_count, axis=1)
+
+            # Remove country based on percentage of NaN indicators
+            min_count = max(len(cols) * country_freq * 0.01, 2)
+            df = df.dropna(thresh=min_count, axis=0)
+
             return table_from_frame(df)

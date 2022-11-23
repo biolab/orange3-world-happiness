@@ -521,7 +521,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
                                     f'{self.available_indices_model.rowCount()} displayed | '
                                     f'{int(len(self.available_indices_view.selectedIndexes())/3)} chosen')
         self.selected_box.setTitle(f'Selected Indicators     '
-                                   f'{len(self.selected_indicators)} displayed | '
+                                   f'{self.selected_indices_view.model().rowCount()} displayed | '
                                    f'{int(len(self.selected_indices_view.selectedIndexes())/3)} chosen')
 
     def initial_indices_update(self):

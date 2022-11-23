@@ -356,7 +356,7 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
     selected_years: List = Setting([])
     selected_indicators: List = Setting([])
     selected_countries: Set = Setting(set({}))
-    auto_apply: bool = Setting(True)
+    auto_apply: bool = Setting(False)
     splitter_state: bytes = Setting(b'')
 
     class Outputs:
@@ -433,8 +433,8 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         gui.auto_send(bbox, self, "auto_apply")
 
         splitter = QSplitter(orientation=Qt.Vertical)
-        available_box = gui.widgetBox(splitter, "Available Indicators")
-        selected_box = gui.widgetBox(splitter, "Selected Indicators")
+        self.available_box = gui.widgetBox(splitter, f"Available Indicators")
+        self.selected_box = gui.widgetBox(splitter, f"Selected Indicators")
 
         self.__indicator_filter_line_edit = QLineEdit(placeholderText="Filter ...")
 
@@ -456,12 +456,12 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.__indicator_and_button.adjustSize()
         self.__indicator_and_button.setToolTip("Toggle filtering indicators that include all words.")
 
-        filters_row = gui.hBox(available_box)
+        filters_row = gui.hBox(self.available_box)
         filters_row.layout().addWidget(self.__indicator_filter_line_edit)
         filters_row.layout().addWidget(self.__indicator_and_button)
         filters_row.layout().addWidget(self.__indicator_relative_checkbox)
         filters_row.layout().addWidget(self.__indicator_sparse_checkbox)
-        available_box.layout().addWidget(filters_row)
+        self.available_box.layout().addWidget(filters_row)
 
         def dropcompleted(action):
             if action == Qt.MoveAction:
@@ -474,19 +474,23 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         proxy.setFilterKeyColumn(-1)
         proxy.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self.__indicator_filter_line_edit.textChanged.connect(proxy.set_filter_string)
+        self.__indicator_filter_line_edit.textChanged.connect(self.fix_redraw)
         self.available_indices_view.setModel(proxy)
         self.available_indices_view.model().setSourceModel(self.available_indices_model)
         self.available_indices_view.dragDropActionDidComplete.connect(dropcompleted)
-        available_box.layout().addWidget(self.available_indices_view)
+        self.available_indices_view.selectionModel().selectionChanged.connect(self.fix_redraw)
+        self.available_box.layout().addWidget(self.available_indices_view)
 
         self.selected_indices_model = IndicatorTableModel()
         self.selected_indices_view = IndicatorTableView()
         self.selected_indices_view.setModel(self.selected_indices_model)
+        self.selected_indices_view.selectionModel().selectionChanged.connect(self.fix_redraw)
+
         self.selected_indices_model.rowsInserted.connect(self.__on_dummy_change)
         self.selected_indices_model.rowsRemoved.connect(self.__on_dummy_change)
         self.selected_indices_view.dragDropActionDidComplete.connect(dropcompleted)
         self.selected_indices_view.keyPressed.connect(self.__on_indicator_delete)
-        selected_box.layout().addWidget(self.selected_indices_view)
+        self.selected_box.layout().addWidget(self.selected_indices_view)
 
         splitter.setSizes([300, 200])
         splitter.splitterMoved.connect(
@@ -499,13 +503,21 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
         self.available_indices_view.resizeColumnToContents(0)
         self.available_indices_view.resizeColumnToContents(1)
 
-        self.selected_indices_view.setColumnWidth(0, self.available_indices_view.columnWidth(0))
-        self.selected_indices_view.setColumnWidth(1, self.available_indices_view.columnWidth(1))
+        self.selected_indices_view.resizeColumnToContents(0)
+        self.selected_indices_view.resizeColumnToContents(1)
 
         # Hide all collumns used in hover and etc.
         for i in range(3, self.available_indices_view.model().columnCount()):
             self.available_indices_view.setColumnHidden(i, True)
             self.selected_indices_view.setColumnHidden(i, True)
+
+        self.available_box.setTitle(f'Available Indicators     '
+                                    f'{self.available_indices_view.model().rowCount()} / '
+                                    f'{self.available_indices_model.rowCount()} displayed | '
+                                    f'{int(len(self.available_indices_view.selectedIndexes())/3)} chosen')
+        self.selected_box.setTitle(f'Selected Indicators     '
+                                   f'{len(self.selected_indicators)} displayed | '
+                                   f'{int(len(self.selected_indices_view.selectedIndexes())/3)} chosen')
 
     def initial_indices_update(self):
         used = self.selected_indicators
@@ -515,6 +527,11 @@ class OWWHStudy(OWWidget, ConcurrentWidgetMixin):
 
         self.selected_years = self.selected_years if len(self.selected_years) > 0 else list(range(10))
         self.fix_redraw()
+
+        # If big querry make sure auto apply is False
+        if len(used) > 50 or len(self.selected_countries) > 10 or len(self.selected_years) > 10:
+            self.auto_apply = False
+
         self.commit.deferred()
 
     def __on_indicator_filter_changed(self):

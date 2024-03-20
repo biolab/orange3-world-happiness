@@ -98,4 +98,8 @@ if __name__ == '__main__':
         classifiers=CLASSIFIERS,
         namespace_packages=NAMESPACE_PACKAGES,
         zip_safe=False,
+        extras_require={
+            'test': ['coverage'],
+            'doc': ['sphinx', 'recommonmark', 'sphinx_rtd_theme', 'docutils'],
+        },
     )

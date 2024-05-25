@@ -4,7 +4,7 @@
 #
 # Author: Nejc Hirci
 # -----------------------------------------------------------
-
+import time
 
 import wbgapi as wb
 import json
@@ -49,6 +49,11 @@ class WorldIndicators:
         self.pwd = password
         self.db = self.get_connection()
 
+        # Cache results of countries, years and indicators
+        self.countries_cache = None
+        self.years_cache = None
+        self.indicators_cache = None
+
     def get_connection(self):
         """ Set up connection to local mongoDB database
         :return: database object
@@ -61,24 +66,37 @@ class WorldIndicators:
         """ Function gets data from local database.
         :return: list of countries with country codes and names
         """
+        if self.countries_cache is not None:
+            return self.countries_cache
+
         cursor = self.db.countries.find({}, {'_id': 1, 'name': 1})
         out = []
         for doc in cursor:
             out.append((doc['_id'], doc['name']))
+        self.countries_cache = out
         return out
 
     def years(self):
         """ Function gets data from local database.
         :return: list of years with data
         """
-        years = [str(y) for y in range(2021, 1960, -1)]
-        return years
+        if self.years_cache is not None:
+            return self.years_cache
+        sTime = time.time_ns()
+        cursor = self.db.countries.find({"_id": {"$in": ["SVN"]}}, {"indicators": 1})
+        years = [year for doc in cursor for _, val in doc['indicators'].items() for year in val.keys()]
+        years = set(years)
+        print("Time to get years:", (time.time_ns() - sTime) / (10 ** 9))
+        self.years_cache = sorted(list(years))
+        return sorted(list(years))
 
     def indicators(self):
         """ Function gets data from local database.
         Indicator is of form (db, code, is_relative, desc) possibly with url explanation.
         :return: list of indicators
         """
+        if self.indicators_cache is not None:
+            return self.indicators_cache
         cursor = self.db.indicators.find({})
         out = []
         for doc in cursor:
@@ -92,6 +110,7 @@ class WorldIndicators:
                 doc['sparse_indicator']
             ]
             out.append(tuple(indic))
+        self.indicators_cache = out
         return out
 
     def data(self, countries, indicators, year, include_country_names=True, callback=dummy_callback, index_freq=0,

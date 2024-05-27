@@ -82,13 +82,13 @@ class WorldIndicators:
         """
         if self.years_cache is not None:
             return self.years_cache
-        sTime = time.time_ns()
+        # sTime = time.time_ns()
         cursor = self.db.countries.find({"_id": {"$in": ["SVN"]}}, {"indicators": 1})
         years = [year for doc in cursor for _, val in doc['indicators'].items() for year in val.keys()]
         years = set(years)
-        print("Time to get years:", (time.time_ns() - sTime) / (10 ** 9))
-        self.years_cache = sorted(list(years))
-        return sorted(list(years))
+        # print("Time to get years:", (time.time_ns() - sTime) / (10 ** 9))
+        self.years_cache = sorted(list(years), reverse=True)
+        return sorted(list(years), reverse=True)
 
     def indicators(self):
         """ Function gets data from local database.

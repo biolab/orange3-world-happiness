@@ -84,7 +84,8 @@ class AggregationMethods:
         -------
         Aggregated indicator values by year.
         """
-        agg_functions = [0, np.nanmean, np.nanmedian, np.nanmax, np.nanmin]
+        #agg_functions = [0, np.nanmean, np.nanmedian, np.nanmax, np.nanmin]
+        agg_functions = [0, 'nanmean', 'nanmedian', 'nanmax', 'nanmin']
 
         if agg_method == AggregationMethods.NONE:
             return world_data
@@ -106,7 +107,7 @@ class AggregationMethods:
                 ind_step = 0
                 for indicator in cols:
                     selection = x_df.iloc[step, :].filter(regex=indicator)
-                    df.iloc[step, ind_step] = selection.agg(agg_functions[agg_method])
+                    df.iloc[step, ind_step] = selection.agg(func=agg_functions[agg_method])
                     ind_step += 1
 
             if m_df.shape[1] > 1:

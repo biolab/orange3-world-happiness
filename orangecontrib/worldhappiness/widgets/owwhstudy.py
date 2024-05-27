@@ -68,8 +68,10 @@ def run(
 
     indicator_codes = [code for (_, code, desc, *other) in indicators]
 
+    is_agg_none = agg_method == AggregationMethods.NONE
     main_df = MONGO_HANDLE.data(countries, indicator_codes, years, callback=callback,
-                                index_freq=index_freq, country_freq=country_freq)
+                                index_freq=index_freq if is_agg_none else 0,
+                                country_freq=country_freq if is_agg_none else 0)
 
     results = table_from_frame(main_df)
     results = AggregationMethods.aggregate(results, agg_method=agg_method if len(years) > 1 else 0,
